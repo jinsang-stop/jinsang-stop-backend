@@ -1,0 +1,24 @@
+# Java / Spring
+target/
+build/
+out/
+*.class
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+
+# 환경변수
+.env
+.env.*
+!.env.example
+application-local.yml
+application-local.properties
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# 음성 임시 파일 — ADR-0006에 따라 보관하지 않는다
+*.wav
+*.mp3
+*.webm
