@@ -1,8 +1,8 @@
-# calmdesk-backend
+# jinsang-stop-backend
 
 「진상 멈춰」 백엔드 (Java Spring + MySQL).
 
-- 도메인 문서 · PRD · 슬라이스: [jinsang-stop/calmdesk](https://github.com/jinsang-stop/calmdesk)
+- 도메인 문서 · PRD · 슬라이스: [jinsang-stop/jinsang-stop](https://github.com/jinsang-stop/jinsang-stop)
 - 작업 규약: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## 실행 방법
