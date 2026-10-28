@@ -129,6 +129,16 @@ class SessionReportApiTest {
 		}
 
 		@Test
+		@DisplayName("턴이 하나도 없는 세션(첫 턴에서 시스템 오류)에는 '채점되지 않은 턴' 사유가 붙지 않는다")
+		void zeroTurnSession() throws Exception {
+			long id = fixtures.session(userId, 1, 1, "SYSTEM_ERROR", null, ENDED);
+
+			report(id).andExpect(jsonPath("$.turns", empty()))
+					.andExpect(jsonPath("$.growthRecord.included").value(false))
+					.andExpect(jsonPath("$.growthRecord.reasons[*].code", contains("NOT_CALMED")));
+		}
+
+		@Test
 		@DisplayName("채점 실패 턴이 있으면 정보 없음으로 보이고 사유가 붙는다")
 		void unscoredTurn() throws Exception {
 			long id = fixtures.session(userId, 1, 1, "CALMED", 2, ENDED);
