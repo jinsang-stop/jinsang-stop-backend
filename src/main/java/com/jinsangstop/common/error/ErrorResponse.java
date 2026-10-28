@@ -13,7 +13,9 @@ public record ErrorResponse(
 		@Schema(description = "오류 코드 — 프론트엔드는 이 값으로 분기한다",
 				example = "CARD_NOT_FOUND",
 				allowableValues = {"INVALID_REQUEST", "UNAUTHORIZED", "LOGIN_FAILED", "NOT_FOUND", "CARD_NOT_FOUND",
-						"DUPLICATE_LOGIN_ID", "INTERNAL_ERROR"},
+						"DUPLICATE_LOGIN_ID", "METHOD_NOT_ALLOWED", "UNSUPPORTED_MEDIA_TYPE", "TRAINING_SESSION_BUSY",
+						"TRAINING_ENVIRONMENT_NOT_READY", "TRAINING_SESSION_NOT_FOUND", "TRAINING_SESSION_NOT_IN_PROGRESS",
+						"EMPTY_TRANSCRIPT", "AUDIO_UNREADABLE", "AUDIO_TOO_LARGE", "INTERNAL_ERROR"},
 				requiredMode = Schema.RequiredMode.REQUIRED)
 		String code,
 		@Schema(description = "사용자에게 그대로 보여 줘도 되는 메시지", example = "시나리오 카드를 찾을 수 없습니다.",
