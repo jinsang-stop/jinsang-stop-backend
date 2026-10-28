@@ -89,6 +89,7 @@ MySQL 없이 H2로 돈다.
 | `GET /api/training-sessions/{sessionId}` | 세션 상태·종료 사유 — 새로고침 뒤 복원 | 필요 |
 | `POST /api/training-sessions/{sessionId}/abort` | 사용자 중단 — 즉시 종료 | 필요 |
 | `GET /api/training-sessions/{sessionId}/report` | 세션 리포트 — 턴 타임라인·종료 사유·성장 기록 미편입 사유 | 필요 |
+| `GET /api/growth-records?cardId=&intensity=` | 성장 기록 — 한 카드·한 강도의 `소요 턴 수` 시계열 | 필요 |
 
 카드 응답에는 진정 조건과 양보 불가선이 **필드 자체로 없다**. DB에만 있고 `민원인` 연기 프롬프트 조립에만 쓴다.
 
@@ -167,6 +168,8 @@ JINSANGSTOP_RUN_INFERENCE_IT=1 ./gradlew test --tests "*ScoringIntegrationTest"
 - 미편입 사유는 여러 개가 함께 붙는다: `NOT_CALMED` · `UNSCORED_TURNS` · `BOUNDARY_BELOW_THRESHOLD` · `BOUNDARY_THRESHOLD_UNSET`. 각 사유에 사용자 표시용 문구가 있다.
 - 리포트에는 축별 평균(보조 지표)만 있고 합산 점수는 없다. 진정 조건·양보 불가선도 없다.
 - 리포트·판정은 저장하지 않고 조회할 때마다 계산한다. 하한선을 정하면 지난 세션에도 바로 반영된다.
+- 성장 기록은 사용자·카드·`강도`가 같고 편입된 세션만 종료 시각 순으로 준다. 강도는 필수 파라미터다 — 다른 강도를 한 시계열에 섞지 않는다. 하한선이 미정이면 `boundaryThresholdConfigured: false`와 빈 배열.
+- `RepresentativeJourneyTest`가 대표 여정(로그인 → 카드 → 강도 1 → 3턴 → 진정 종료 → 리포트 → 재도전 → 성장 기록 점 두 개)을 API로 끝까지 돈다. 음성·추론 서비스는 저장 응답으로 대체한다.
 
 ### 오류 응답 형식
 
@@ -223,6 +226,7 @@ JINSANGSTOP_RUN_INFERENCE_IT=1 ./gradlew test --tests "*ScoringIntegrationTest"
 | 진정 종료 · 진정시키지 못한 채 종료 · 사용자 중단 · 시스템 오류로 중단 | `TrainingSessionStatus.CALMED` · `TURN_LIMIT_REACHED` · `ABORTED` · `SYSTEM_ERROR` | `training_session.status` |
 | 소요 턴 수 | `turnsToCalm` | `training_session.turns_to_calm` |
 | 성장 기록 편입 판정 · 미편입 사유 | `GrowthEligibility` · `ExclusionReason` | — (조회 시 계산) |
+| 성장 기록 | `GrowthRecordService` / `GrowthRecordResponse` | — (조회 시 계산) |
 | 음성 서비스 | `VoiceClient` / `HttpVoiceClient` | — |
 | 추론 서비스 | `InferenceClient` / `HttpInferenceClient` | — |
 | 출력 검사 | `OutputChecker` (금칙 목록 `AbsoluteLineList`) | — |
@@ -230,7 +234,7 @@ JINSANGSTOP_RUN_INFERENCE_IT=1 ./gradlew test --tests "*ScoringIntegrationTest"
 | 태도 3축 | `AttitudeAxis`, `AttitudeScores` — 정서 안정 `emotionalStability` · 공감 인정 `empathyAcknowledgement` · 경계 설정 `boundarySetting` | `utterance_turn.*_score`, `*_reason` |
 | 채점 | `AttitudeScorer` / `ScoringPromptAssembler`, 상태 `ScoreStatus`(PENDING·SCORED·FAILED) | `utterance_turn.score_status` |
 
-이후 슬라이스에서 쓸 이름도 같은 규칙을 따른다 — `성장 기록` `GrowthRecord`.
+새 이름도 같은 규칙을 따른다 — `CONTEXT.md` 용어를 영어로 옮기고 `_Avoid_` 동의어는 쓰지 않는다.
 
 ## 패키지 구조
 
@@ -244,7 +248,7 @@ com.jinsangstop
 ├── intensity       강도 (domain · dto · controller)
 ├── report          세션 리포트
 ├── complainant     민원인 연기 프롬프트 조립 · 출력 검사(safety)
-├── growth          성장 기록 편입 판정
+├── growth          성장 기록 편입 판정 · 성장 기록 조회
 ├── inference       추론 서비스 HTTP 클라이언트
 ├── scoring         태도 3축 채점 루브릭 · 채점기
 ├── training        훈련 세션 · 발화 턴 (domain · dto · service · controller)
