@@ -1,5 +1,6 @@
 package com.jinsangstop.training;
 
+import com.jinsangstop.inference.InferenceClient;
 import com.jinsangstop.support.TestDataCleaner;
 import com.jinsangstop.voice.VoiceClient;
 import org.junit.jupiter.api.DisplayName;
@@ -43,11 +44,17 @@ class DoubleSubmitTest {
 	@MockitoBean
 	private VoiceClient voiceClient;
 
+	@MockitoBean
+	private InferenceClient inferenceClient;
+
 	@Test
 	@DisplayName("처리 중인 세션에 두 번째 턴이 오면 409 TURN_ALREADY_IN_PROGRESS이고 턴은 하나만 저장된다")
 	void secondConcurrentSubmitRejected() throws Exception {
 		TestDataCleaner.clearUserData(jdbcTemplate);
 		when(voiceClient.isReady()).thenReturn(true);
+		when(inferenceClient.isReady()).thenReturn(true);
+		when(inferenceClient.complete(any())).thenReturn("{\"대사\": \"환불해 줘요\", \"진정함\": false}");
+		when(voiceClient.synthesize(anyString())).thenReturn("RIFF".getBytes());
 		CountDownLatch firstStarted = new CountDownLatch(1);
 		CountDownLatch release = new CountDownLatch(1);
 		when(voiceClient.transcribe(any(), anyString())).thenAnswer(invocation -> {

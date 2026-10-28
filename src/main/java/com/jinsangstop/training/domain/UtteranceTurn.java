@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 
 /**
  * 발화 턴 — 사용자 발화 하나와 그에 대한 민원인 응답 하나의 쌍(ADR-0001).
- * 지금은 사용자 전사만 담는다. 오디오는 저장하지 않는다(ADR-0006).
+ * 사용자 전사와 민원인 대사(텍스트)만 담는다. 사용자 음성·합성 음성은 저장하지 않는다(ADR-0006).
  */
 @Entity
 @Table(name = "utterance_turn")
@@ -34,6 +34,14 @@ public class UtteranceTurn {
 	@Column(name = "user_transcript", nullable = false, columnDefinition = "TEXT")
 	private String userTranscript;
 
+	/** 민원인 대사 — 출력 검사를 통과한 것만 저장된다 */
+	@Column(name = "complainant_line", columnDefinition = "TEXT")
+	private String complainantLine;
+
+	/** 민원인이 이 턴에서 진정했는지 */
+	@Column(nullable = false)
+	private boolean calmed;
+
 	/** 확정 시각 */
 	@Column(name = "created_at", nullable = false)
 	private LocalDateTime createdAt;
@@ -42,16 +50,20 @@ public class UtteranceTurn {
 	protected UtteranceTurn() {
 	}
 
-	private UtteranceTurn(Long sessionId, int turnNumber, String userTranscript, LocalDateTime createdAt) {
+	private UtteranceTurn(Long sessionId, int turnNumber, String userTranscript, String complainantLine,
+			boolean calmed, LocalDateTime createdAt) {
 		this.sessionId = sessionId;
 		this.turnNumber = turnNumber;
 		this.userTranscript = userTranscript;
+		this.complainantLine = complainantLine;
+		this.calmed = calmed;
 		this.createdAt = createdAt;
 	}
 
-	/** 확정된 턴을 만든다. */
-	public static UtteranceTurn of(Long sessionId, int turnNumber, String userTranscript, LocalDateTime createdAt) {
-		return new UtteranceTurn(sessionId, turnNumber, userTranscript, createdAt);
+	/** 확정된 턴을 만든다 — 사용자 전사와 그에 대한 민원인 응답 한 쌍(ADR-0001). */
+	public static UtteranceTurn of(Long sessionId, int turnNumber, String userTranscript, String complainantLine,
+			boolean calmed, LocalDateTime createdAt) {
+		return new UtteranceTurn(sessionId, turnNumber, userTranscript, complainantLine, calmed, createdAt);
 	}
 
 	public Long getId() {
@@ -68,6 +80,14 @@ public class UtteranceTurn {
 
 	public String getUserTranscript() {
 		return userTranscript;
+	}
+
+	public String getComplainantLine() {
+		return complainantLine;
+	}
+
+	public boolean isCalmed() {
+		return calmed;
 	}
 
 	public LocalDateTime getCreatedAt() {

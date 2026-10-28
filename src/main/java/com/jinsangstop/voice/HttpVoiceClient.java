@@ -13,6 +13,7 @@ import org.springframework.web.client.RestClientException;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.Map;
 
 /**
  * 음성 서비스 HTTP 클라이언트.
@@ -26,7 +27,7 @@ public class HttpVoiceClient implements VoiceClient {
 
 	/** 헬스 확인용 — 짧은 시간 제한 */
 	private final RestClient healthClient;
-	/** 전사용 — 긴 발화를 처리할 만큼의 시간 제한 */
+	/** 전사·합성용 — 긴 발화를 처리할 만큼의 시간 제한 */
 	private final RestClient transcribeClient;
 
 	public HttpVoiceClient(
@@ -102,6 +103,32 @@ public class HttpVoiceClient implements VoiceClient {
 			throw new VoiceServiceException(VoiceServiceException.Kind.UNAVAILABLE, "음성 서비스에 연결하지 못함", e);
 		} catch (RestClientException e) {
 			throw new VoiceServiceException(VoiceServiceException.Kind.UNAVAILABLE, "음성 서비스 응답 처리 실패", e);
+		}
+	}
+
+	/** POST /synthesize — 응답 본문은 JSON이 아니라 audio/wav 바이트다. */
+	@Override
+	public byte[] synthesize(String text) {
+		try {
+			byte[] audio = transcribeClient.post()
+					.uri("/synthesize")
+					.contentType(MediaType.APPLICATION_JSON)
+					.body(Map.of("text", text))
+					.retrieve()
+					.onStatus(status -> status.isError(), (request, res) -> {
+						// 합성 실패는 음성 서비스가 422를 두지 않고 전부 자기 쪽 문제로 보고한다(음성 저장소 README)
+						throw new VoiceServiceException(VoiceServiceException.Kind.UNAVAILABLE,
+								"음성 서비스 합성 실패: HTTP " + res.getStatusCode().value());
+					})
+					.body(byte[].class);
+			if (audio == null || audio.length == 0) {
+				throw new VoiceServiceException(VoiceServiceException.Kind.UNAVAILABLE, "음성 서비스가 빈 오디오를 돌려줬다");
+			}
+			return audio;
+		} catch (VoiceServiceException e) {
+			throw e;
+		} catch (RestClientException e) {
+			throw new VoiceServiceException(VoiceServiceException.Kind.UNAVAILABLE, "음성 서비스 합성 호출 실패", e);
 		}
 	}
 

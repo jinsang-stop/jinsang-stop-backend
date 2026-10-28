@@ -62,6 +62,10 @@ public final class ErrorExamples {
 	public static final String UNSUPPORTED_MEDIA_TYPE = """
 			{ "status": 415, "code": "UNSUPPORTED_MEDIA_TYPE", "message": "지원하지 않는 요청 형식입니다." }""";
 
+	/** 500 — 출력 검사 재시도 실패로 세션 종료 */
+	public static final String SESSION_ENDED_BY_SYSTEM_ERROR = """
+			{ "status": 500, "code": "SESSION_ENDED_BY_SYSTEM_ERROR", "message": "일시적인 문제로 훈련을 이어갈 수 없어 종료했습니다. 새 훈련을 시작해 주세요." }""";
+
 	/** 404 — 카드 없음 */
 	public static final String CARD_NOT_FOUND = """
 			{ "status": 404, "code": "CARD_NOT_FOUND", "message": "시나리오 카드를 찾을 수 없습니다." }""";

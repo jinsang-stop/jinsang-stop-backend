@@ -6,3 +6,8 @@ spring:
     username: sa
     password:
     driver-class-name: org.h2.Driver
+
+# 테스트에서는 세션 시작 시 캐시 예열을 끈다(추론 서비스는 모의 객체)
+jinsangstop:
+  acting:
+    warmup-enabled: false

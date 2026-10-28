@@ -65,12 +65,17 @@ public class TrainingSession {
 	@Column(name = "ended_at")
 	private LocalDateTime endedAt;
 
+	/** 민원인 연기 호출 시드 — 세션마다 기록해 대화를 재현할 수 있게 한다(ADR-0009) */
+	@Column(name = "acting_seed")
+	private Long actingSeed;
+
 	/** JPA 전용 기본 생성자 */
 	protected TrainingSession() {
 	}
 
-	private TrainingSession(Long userId, Long cardId, int intensity, LocalDateTime now) {
+	private TrainingSession(Long userId, Long cardId, int intensity, long actingSeed, LocalDateTime now) {
 		this.userId = userId;
+		this.actingSeed = actingSeed;
 		this.cardId = cardId;
 		this.intensity = intensity;
 		this.status = TrainingSessionStatus.IN_PROGRESS;
@@ -81,8 +86,8 @@ public class TrainingSession {
 	}
 
 	/** 새 진행 중 세션을 만든다. */
-	public static TrainingSession start(Long userId, Long cardId, int intensity, LocalDateTime now) {
-		return new TrainingSession(userId, cardId, intensity, now);
+	public static TrainingSession start(Long userId, Long cardId, int intensity, long actingSeed, LocalDateTime now) {
+		return new TrainingSession(userId, cardId, intensity, actingSeed, now);
 	}
 
 	/** 진행 중인지 */
@@ -104,7 +109,17 @@ public class TrainingSession {
 
 	/** 방치된 세션을 정리한다 — 진행 중 자리를 비운다. */
 	public void abandon(LocalDateTime now) {
-		this.status = TrainingSessionStatus.ABANDONED;
+		end(TrainingSessionStatus.ABANDONED, now);
+	}
+
+	/** 시스템 오류로 중단한다. */
+	public void endWithSystemError(LocalDateTime now) {
+		end(TrainingSessionStatus.SYSTEM_ERROR, now);
+	}
+
+	/** 세션을 끝낸다 — 종료 사유(상태)를 하나만 기록하고 진행 중 자리를 비워 다음 세션이 시작될 수 있게 한다. */
+	private void end(TrainingSessionStatus reason, LocalDateTime now) {
+		this.status = reason;
 		this.activeSlot = null;
 		this.endedAt = now;
 	}
@@ -143,5 +158,9 @@ public class TrainingSession {
 
 	public LocalDateTime getEndedAt() {
 		return endedAt;
+	}
+
+	public Long getActingSeed() {
+		return actingSeed;
 	}
 }

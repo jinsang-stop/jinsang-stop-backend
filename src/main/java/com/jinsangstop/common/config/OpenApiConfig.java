@@ -61,9 +61,9 @@ public class OpenApiConfig {
 			| 1 | 훈련 시작 | `POST /api/training-sessions` `{cardId, intensity}` | `409 TRAINING_SESSION_BUSY` 대기 안내 · `503 TRAINING_ENVIRONMENT_NOT_READY` 환경 미준비 |
 			| 2 | 마이크 권한 | 브라우저 `getUserMedia` | — |
 			| 3 | 말하기 → "말하기 끝내기" | `POST /api/training-sessions/{sessionId}/turns` (본문 = 녹음 Blob) | `422 EMPTY_TRANSCRIPT`·`AUDIO_UNREADABLE` 다시 말하기 |
-			| 4 | 전사 표시 | 응답의 `userTranscript`를 내 말로 표시 | — |
+			| 4 | 응답 표시 | `userTranscript`(내 말) · `complainantLine`(역할명과 함께) 표시, `complainantAudio` 재생 | `500 SESSION_ENDED_BY_SYSTEM_ERROR` 종료 안내 |
 
-			음성 서비스는 브라우저에서 직접 부르지 않는다. 오디오는 서버에 저장되지 않는다.
+			음성·추론 서비스는 브라우저에서 직접 부르지 않는다. 사용자 오디오와 민원인 합성 음성은 서버에 저장되지 않는다.
 
 			## 오류 응답
 			성공이 아니면 **모든 API가 같은 형식**을 돌려준다. `code`로 분기하고, `message`는 사용자에게 그대로 보여 줘도 되는 문장이다.
@@ -87,7 +87,8 @@ public class OpenApiConfig {
 			| `AUDIO_TOO_LARGE` | 413 | 녹음이 너무 김 |
 			| `METHOD_NOT_ALLOWED` | 405 | 지원하지 않는 HTTP 메서드 |
 			| `UNSUPPORTED_MEDIA_TYPE` | 415 | 본문 형식이 맞지 않음(턴 제출은 audio/*) |
-			| `TRAINING_ENVIRONMENT_NOT_READY` | 503 | 음성 서비스 미준비·장애 — 다시 말해도 풀리지 않음 |
+			| `SESSION_ENDED_BY_SYSTEM_ERROR` | 500 | 민원인 대사가 안전 검사를 통과하지 못해 세션 종료 — 새 훈련으로 |
+			| `TRAINING_ENVIRONMENT_NOT_READY` | 503 | 음성·추론 서비스 미준비·장애 — 다시 말해도 풀리지 않음 |
 			| `INTERNAL_ERROR` | 500 | 서버 내부 오류 |
 
 			## 꼭 지킬 것

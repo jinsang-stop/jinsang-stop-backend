@@ -20,4 +20,11 @@ public interface VoiceClient {
 	 * @throws VoiceServiceException 오디오를 읽지 못했거나(다시 말하면 풀림) 서비스 쪽 문제일 때
 	 */
 	String transcribe(byte[] audio, String contentType);
+
+	/**
+	 * 출력 검사를 통과한 민원인 대사를 한국어 음성(WAV)으로 합성한다. 합성 음성은 저장하지 않는다(ADR-0006).
+	 *
+	 * @throws VoiceServiceException 합성 실패(UNAVAILABLE)
+	 */
+	byte[] synthesize(String text);
 }

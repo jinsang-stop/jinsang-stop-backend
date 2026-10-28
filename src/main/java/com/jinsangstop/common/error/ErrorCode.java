@@ -37,6 +37,8 @@ public enum ErrorCode {
 	EMPTY_TRANSCRIPT(HttpStatus.UNPROCESSABLE_CONTENT, "말소리가 들리지 않았어요. 다시 말해 주세요."),
 	/** 보낸 오디오를 읽지 못함 — 다시 녹음하면 풀리는 문제 */
 	AUDIO_UNREADABLE(HttpStatus.UNPROCESSABLE_CONTENT, "녹음을 읽지 못했어요. 다시 말해 주세요."),
+	/** 민원인 대사가 재시도까지 출력 검사를 통과하지 못해 세션을 시스템 오류로 끝냄 */
+	SESSION_ENDED_BY_SYSTEM_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "일시적인 문제로 훈련을 이어갈 수 없어 종료했습니다. 새 훈련을 시작해 주세요."),
 	/** 오디오가 허용 크기를 넘음 */
 	AUDIO_TOO_LARGE(HttpStatus.CONTENT_TOO_LARGE, "녹음이 너무 깁니다. 나눠서 말해 주세요."),
 	/** 해당 식별자의 공식 카드가 없음 */
