@@ -272,8 +272,14 @@ public class TrainingSessionService {
 	/** 채점을 실행기에 올린다. AttitudeScorer는 예외를 던지지 않고 실패를 빈 값으로 돌려준다 */
 	private CompletableFuture<Optional<AttitudeScores>> startScoring(ScenarioCard card, String previousComplainantLine,
 			String transcript) {
-		return CompletableFuture.supplyAsync(
-				() -> attitudeScorer.score(card.getSituation(), previousComplainantLine, transcript), turnExecutor);
+		try {
+			return CompletableFuture.supplyAsync(
+					() -> attitudeScorer.score(card.getSituation(), previousComplainantLine, transcript), turnExecutor);
+		} catch (TaskRejectedException e) {
+			// 실행기 대기열이 가득 차면 채점을 포기하고 정보 없음으로 둔다 — 턴 진행은 막지 않는다
+			log.warn("채점을 실행기에 올리지 못해 정보 없음으로 저장: {}", e.getMessage());
+			return CompletableFuture.completedFuture(Optional.empty());
+		}
 	}
 
 	/** 합성이 끝난 뒤 채점을 잠깐 더 기다린다. 제때 끝나면 결과, 아니면 빈 값 */
