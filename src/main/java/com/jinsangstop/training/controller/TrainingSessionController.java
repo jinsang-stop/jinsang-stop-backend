@@ -58,7 +58,15 @@ public class TrainingSessionController {
 
 	/** Swagger 예시 — 확정된 턴 */
 	public static final String TURN_EXAMPLE = """
-			{ "sessionId": 1, "turnNumber": 1, "userTranscript": "죄송합니다 손님" }""";
+			{
+			  "sessionId": 1,
+			  "turnNumber": 1,
+			  "userTranscript": "죄송합니다 손님",
+			  "complainantLine": "죄송하면 다예요? 지금 바로 환불해 달라고요.",
+			  "calmed": false,
+			  "complainantAudio": "UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=",
+			  "complainantAudioContentType": "audio/wav"
+			}""";
 
 	private final TrainingSessionService trainingSessionService;
 	/** 받을 수 있는 오디오 최대 크기(바이트) — 음성 서비스 상한과 맞춘다 */
@@ -77,7 +85,7 @@ public class TrainingSessionController {
 
 					- 시연 장비 한 대가 **한 번에 한 세션만** 돌린다. 누군가(본인 포함) 훈련 중이면 `409 TRAINING_SESSION_BUSY` — "잠시 후 다시" 안내를 띄운다.
 					  마지막 턴 뒤로 오래(기본 10분) 아무 활동이 없던 세션은 방치된 것으로 보고 정리한 뒤 새 세션을 연다.
-					- 음성 서비스가 꺼져 있으면 세션을 만들지 않고 `503 TRAINING_ENVIRONMENT_NOT_READY`.
+					- 음성 서비스나 추론 서비스가 꺼져 있으면 세션을 만들지 않고 `503 TRAINING_ENVIRONMENT_NOT_READY`.
 					- 2·3단계 강도는 프론트가 고지 확인을 받은 뒤에 보낸다.""",
 			security = @SecurityRequirement(name = OpenApiConfig.SESSION_COOKIE_SCHEME))
 	@ApiResponses({
@@ -96,7 +104,7 @@ public class TrainingSessionController {
 			@ApiResponse(responseCode = "409", description = "다른 훈련 진행 중(TRAINING_SESSION_BUSY) — 대기 안내",
 					content = @Content(schema = @Schema(implementation = ErrorResponse.class),
 							examples = @ExampleObject(name = "TRAINING_SESSION_BUSY", value = ErrorExamples.TRAINING_SESSION_BUSY))),
-			@ApiResponse(responseCode = "503", description = "음성 서비스 미준비(TRAINING_ENVIRONMENT_NOT_READY)",
+			@ApiResponse(responseCode = "503", description = "음성·추론 서비스 미준비(TRAINING_ENVIRONMENT_NOT_READY)",
 					content = @Content(schema = @Schema(implementation = ErrorResponse.class),
 							examples = @ExampleObject(name = "TRAINING_ENVIRONMENT_NOT_READY", value = ErrorExamples.TRAINING_ENVIRONMENT_NOT_READY)))
 	})
@@ -118,10 +126,19 @@ public class TrainingSessionController {
 					  body: blob,                               // MediaRecorder가 만든 Blob
 					})
 					```
+					응답이 올 때까지(전사 → 민원인 대사 생성 → 음성 합성) 수 초가 걸리므로 대기 표시를 띄운다.
+
+					**응답 처리**
+					- `complainantAudio`(Base64 WAV)를 디코딩해 바로 재생하고, `complainantLine`을 역할명과 함께 표시한다.
+					  ```js
+					  const audio = new Audio(`data:${res.complainantAudioContentType};base64,${res.complainantAudio}`);
+					  audio.play();
+					  ```
 					- 전사가 비었으면 `422 EMPTY_TRANSCRIPT` — **턴 번호를 소모하지 않으니** "다시 말해 주세요"를 띄우고 다시 녹음하면 된다.
 					- 오디오를 읽지 못하면 `422 AUDIO_UNREADABLE` — 역시 다시 녹음.
-					- 음성 서비스 문제는 `503 TRAINING_ENVIRONMENT_NOT_READY` — 다시 말해도 풀리지 않는다.
-					- 오디오는 전사 직후 버리고 서버 어디에도 저장하지 않는다. 남는 것은 전사 텍스트뿐이다.""",
+					- 음성·추론 서비스 문제는 `503 TRAINING_ENVIRONMENT_NOT_READY` — 턴은 소모되지 않는다. 같은 녹음으로 다시 시도할 수 있다.
+					- `500 SESSION_ENDED_BY_SYSTEM_ERROR` — 민원인 대사가 안전 검사를 통과하지 못해 **세션이 끝났다.** 안내 화면을 띄우고 새 훈련으로 보낸다.
+					- 오디오는 전사 직후 버리고 서버 어디에도 저장하지 않는다. 합성 음성도 저장하지 않으므로 다시 받을 수 없다.""",
 			security = @SecurityRequirement(name = OpenApiConfig.SESSION_COOKIE_SCHEME),
 			requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true,
 					description = "녹음 오디오 바이트(webm/opus · ogg/opus · wav · mp3). Content-Type은 audio/*",
@@ -151,7 +168,10 @@ public class TrainingSessionController {
 									@ExampleObject(name = "EMPTY_TRANSCRIPT", value = ErrorExamples.EMPTY_TRANSCRIPT),
 									@ExampleObject(name = "AUDIO_UNREADABLE", value = ErrorExamples.AUDIO_UNREADABLE)
 							})),
-			@ApiResponse(responseCode = "503", description = "음성 서비스 문제(TRAINING_ENVIRONMENT_NOT_READY)",
+			@ApiResponse(responseCode = "500", description = "출력 검사 재시도 실패로 세션 종료(SESSION_ENDED_BY_SYSTEM_ERROR)",
+					content = @Content(schema = @Schema(implementation = ErrorResponse.class),
+							examples = @ExampleObject(name = "SESSION_ENDED_BY_SYSTEM_ERROR", value = ErrorExamples.SESSION_ENDED_BY_SYSTEM_ERROR))),
+			@ApiResponse(responseCode = "503", description = "음성·추론 서비스 문제(TRAINING_ENVIRONMENT_NOT_READY) — 턴 미소모",
 					content = @Content(schema = @Schema(implementation = ErrorResponse.class),
 							examples = @ExampleObject(name = "TRAINING_ENVIRONMENT_NOT_READY", value = ErrorExamples.TRAINING_ENVIRONMENT_NOT_READY)))
 	})

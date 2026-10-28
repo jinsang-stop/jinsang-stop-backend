@@ -2,6 +2,8 @@ package com.jinsangstop.training;
 
 import com.jinsangstop.support.MutableClock;
 import com.jinsangstop.support.TestDataCleaner;
+import com.jinsangstop.inference.InferenceClient;
+import com.jinsangstop.inference.InferenceServiceException;
 import com.jinsangstop.voice.VoiceClient;
 import com.jinsangstop.voice.VoiceServiceException;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,10 +24,13 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
+import org.mockito.ArgumentCaptor;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.Base64;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -77,11 +82,23 @@ class TrainingSessionApiTest {
 	@MockitoBean
 	private VoiceClient voiceClient;
 
+	@MockitoBean
+	private InferenceClient inferenceClient;
+
+	/** 출력 검사를 통과하는 평범한 민원인 응답 */
+	private static final String OK_REPLY = "{\"대사\": \"영수증이 없으면 어떡하라는 거예요?\", \"진정함\": false}";
+	/** 합성 음성 대신 쓸 바이트 */
+	private static final byte[] SPEECH = "RIFF-fake-wav".getBytes();
+
 	@BeforeEach
 	void setUp() {
 		TestDataCleaner.clearUserData(jdbcTemplate);
 		clock.reset(START);
 		when(voiceClient.isReady()).thenReturn(true);
+		when(inferenceClient.isReady()).thenReturn(true);
+		when(inferenceClient.complete(any())).thenReturn(OK_REPLY);
+		when(voiceClient.synthesize(anyString())).thenReturn(SPEECH);
+		when(voiceClient.transcribe(any(), anyString())).thenReturn("죄송합니다 손님");
 	}
 
 	// ── 세션 시작 ─────────────────────────────────────────
@@ -212,7 +229,11 @@ class TrainingSessionApiTest {
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.sessionId").value(sessionId))
 				.andExpect(jsonPath("$.turnNumber").value(1))
-				.andExpect(jsonPath("$.userTranscript").value("죄송합니다 손님"));
+				.andExpect(jsonPath("$.userTranscript").value("죄송합니다 손님"))
+				.andExpect(jsonPath("$.complainantLine").value("영수증이 없으면 어떡하라는 거예요?"))
+				.andExpect(jsonPath("$.calmed").value(false))
+				.andExpect(jsonPath("$.complainantAudio").value(Base64.getEncoder().encodeToString(SPEECH)))
+				.andExpect(jsonPath("$.complainantAudioContentType").value("audio/wav"));
 		submitTurn(user, sessionId, AUDIO)
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.turnNumber").value(2));
@@ -342,6 +363,150 @@ class TrainingSessionApiTest {
 	void submitRequiresLogin() throws Exception {
 		mockMvc.perform(post("/api/training-sessions/1/turns").contentType(WEBM).content(AUDIO))
 				.andExpect(status().isUnauthorized());
+	}
+
+	// ── 민원인 응답(#4) ───────────────────────────────────
+
+	@Test
+	@DisplayName("추론 서비스가 준비되지 않으면 세션을 만들지 않고 503")
+	void inferenceNotReady() throws Exception {
+		MockHttpSession user = signup("trainee01");
+		when(inferenceClient.isReady()).thenReturn(false);
+
+		startSession(user, 1, 1)
+				.andExpect(status().isServiceUnavailable())
+				.andExpect(jsonPath("$.code").value("TRAINING_ENVIRONMENT_NOT_READY"));
+		assertThat(countSessions()).isZero();
+	}
+
+	@Test
+	@DisplayName("연기 호출은 슬롯 0·temperature>0·세션 시드 기반이고, 이전 턴이 대화 기록으로 들어간다")
+	void actingRequestShape() throws Exception {
+		MockHttpSession user = signup("trainee01");
+		long sessionId = sessionId(startSession(user, 1, 2));
+		when(voiceClient.transcribe(any(), anyString())).thenReturn("어서 오세요", "영수증 있으세요?");
+
+		submitTurn(user, sessionId, AUDIO).andExpect(status().isCreated());
+		submitTurn(user, sessionId, AUDIO).andExpect(status().isCreated());
+
+		ArgumentCaptor<InferenceClient.ChatRequest> captor = ArgumentCaptor.forClass(InferenceClient.ChatRequest.class);
+		verify(inferenceClient, org.mockito.Mockito.times(2)).complete(captor.capture());
+		InferenceClient.ChatRequest second = captor.getAllValues().get(1);
+		assertThat(second.slot()).isZero();
+		assertThat(second.temperature()).isGreaterThan(0);
+		assertThat(second.schema()).isNotNull();
+		long seed = jdbcTemplate.queryForObject("SELECT acting_seed FROM training_session WHERE id = ?", Long.class, sessionId);
+		assertThat(second.seed()).isEqualTo(seed + 2 * 10 + 1);
+		// system + (직원1, 민원인1) + 직원2
+		List<InferenceClient.Message> messages = second.messages();
+		assertThat(messages).hasSize(4);
+		assertThat(messages.get(0).content()).contains("강도 2단계", "언성을 높이고 반말을 섞는다").doesNotContain("고성으로 말을 몰아붙인다");
+		assertThat(messages.get(1).content()).isEqualTo("직원: 어서 오세요");
+		assertThat(messages.get(2).content()).contains("영수증이 없으면 어떡하라는 거예요?");
+		assertThat(messages.get(3).content()).isEqualTo("직원: 영수증 있으세요?");
+	}
+
+	@Test
+	@DisplayName("첫 대사가 금칙에 걸리면 재시도하고, 재시도 대사만 합성된다")
+	void retryAfterForbiddenLine() throws Exception {
+		MockHttpSession user = signup("trainee01");
+		long sessionId = sessionId(startSession(user, 1, 1));
+		when(inferenceClient.complete(any())).thenReturn(
+				"{\"대사\": \"한 번만 더 그러면 죽여버린다\", \"진정함\": false}", OK_REPLY);
+
+		submitTurn(user, sessionId, AUDIO)
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.complainantLine").value("영수증이 없으면 어떡하라는 거예요?"));
+		verify(voiceClient).synthesize("영수증이 없으면 어떡하라는 거예요?");
+		verify(voiceClient, never()).synthesize(org.mockito.ArgumentMatchers.contains("죽여"));
+	}
+
+	@Test
+	@DisplayName("금칙·비한국어 대사가 재시도까지 나오면 TTS로 넘기지 않고 세션을 시스템 오류로 끝낸다")
+	void systemErrorAfterRetry() throws Exception {
+		MockHttpSession user = signup("trainee01");
+		long sessionId = sessionId(startSession(user, 1, 1));
+		when(inferenceClient.complete(any())).thenReturn(
+				"{\"대사\": \"죽 여 버 린 다\", \"진정함\": false}",
+				"{\"대사\": \"你好，请给我退款\", \"진정함\": false}");
+
+		submitTurn(user, sessionId, AUDIO)
+				.andExpect(status().isInternalServerError())
+				.andExpect(jsonPath("$.code").value("SESSION_ENDED_BY_SYSTEM_ERROR"));
+
+		verify(voiceClient, never()).synthesize(anyString());
+		assertThat(jdbcTemplate.queryForObject("SELECT status FROM training_session WHERE id = ?", String.class, sessionId))
+				.isEqualTo("SYSTEM_ERROR");
+		assertThat(countTurns(sessionId)).isZero();
+		// 잠금이 풀려 바로 새 세션을 시작할 수 있다
+		startSession(user, 1, 1).andExpect(status().isCreated());
+	}
+
+	@Test
+	@DisplayName("형식이 깨진 응답도 출력 검사 실패로 보고 재시도한다")
+	void malformedReplyRetries() throws Exception {
+		MockHttpSession user = signup("trainee01");
+		long sessionId = sessionId(startSession(user, 1, 1));
+		when(inferenceClient.complete(any())).thenReturn("{\"대사\": \"},{\"", OK_REPLY);
+
+		submitTurn(user, sessionId, AUDIO).andExpect(status().isCreated());
+	}
+
+	@Test
+	@DisplayName("직원 말을 '직원:'째로 따라 한 응답은 역할 혼동으로 보고 재시도한다")
+	void roleConfusionRetries() throws Exception {
+		MockHttpSession user = signup("trainee01");
+		long sessionId = sessionId(startSession(user, 1, 1));
+		when(inferenceClient.complete(any())).thenReturn("{\"대사\": \"직원: 죄송합니다 손님\", \"진정함\": false}", OK_REPLY);
+
+		submitTurn(user, sessionId, AUDIO)
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.complainantLine").value("영수증이 없으면 어떡하라는 거예요?"));
+		verify(voiceClient, never()).synthesize(org.mockito.ArgumentMatchers.startsWith("직원"));
+	}
+
+	@Test
+	@DisplayName("추론 서비스 장애면 503이고 턴을 소모하지 않는다")
+	void inferenceFailureDuringTurn() throws Exception {
+		MockHttpSession user = signup("trainee01");
+		long sessionId = sessionId(startSession(user, 1, 1));
+		when(inferenceClient.complete(any())).thenThrow(new InferenceServiceException("timeout"));
+
+		submitTurn(user, sessionId, AUDIO)
+				.andExpect(status().isServiceUnavailable())
+				.andExpect(jsonPath("$.code").value("TRAINING_ENVIRONMENT_NOT_READY"));
+		assertThat(turnCount(sessionId)).isZero();
+		assertThat(jdbcTemplate.queryForObject("SELECT status FROM training_session WHERE id = ?", String.class, sessionId))
+				.isEqualTo("IN_PROGRESS");
+	}
+
+	@Test
+	@DisplayName("합성 실패면 503이고 턴을 소모하지 않는다")
+	void synthesisFailure() throws Exception {
+		MockHttpSession user = signup("trainee01");
+		long sessionId = sessionId(startSession(user, 1, 1));
+		when(voiceClient.synthesize(anyString()))
+				.thenThrow(new VoiceServiceException(VoiceServiceException.Kind.UNAVAILABLE, "TTS_FAILED"));
+
+		submitTurn(user, sessionId, AUDIO)
+				.andExpect(status().isServiceUnavailable())
+				.andExpect(jsonPath("$.code").value("TRAINING_ENVIRONMENT_NOT_READY"));
+		assertThat(turnCount(sessionId)).isZero();
+	}
+
+	@Test
+	@DisplayName("민원인 대사와 진정 여부가 턴과 함께 저장된다")
+	void complainantLineStored() throws Exception {
+		MockHttpSession user = signup("trainee01");
+		long sessionId = sessionId(startSession(user, 1, 1));
+		when(inferenceClient.complete(any())).thenReturn("{\"대사\": \"알겠어요, 고객센터로 접수할게요.\", \"진정함\": true}");
+
+		submitTurn(user, sessionId, AUDIO)
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.calmed").value(true));
+		assertThat(jdbcTemplate.queryForMap("SELECT complainant_line, calmed FROM utterance_turn WHERE session_id = ?", sessionId))
+				.containsEntry("complainant_line", "알겠어요, 고객센터로 접수할게요.")
+				.containsEntry("calmed", true);
 	}
 
 	// ── 도우미 ───────────────────────────────────────────

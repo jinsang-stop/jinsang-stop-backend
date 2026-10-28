@@ -1,6 +1,7 @@
 package com.jinsangstop.training;
 
 import com.jinsangstop.support.TestDataCleaner;
+import com.jinsangstop.inference.InferenceClient;
 import com.jinsangstop.voice.VoiceClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -56,6 +57,9 @@ class AudioNotPersistedTest {
 	@MockitoBean
 	private VoiceClient voiceClient;
 
+	@MockitoBean
+	private InferenceClient inferenceClient;
+
 	private final HttpClient http = HttpClient.newHttpClient();
 
 	@BeforeEach
@@ -63,6 +67,9 @@ class AudioNotPersistedTest {
 		TestDataCleaner.clearUserData(jdbcTemplate);
 		when(voiceClient.isReady()).thenReturn(true);
 		when(voiceClient.transcribe(any(), anyString())).thenReturn("죄송합니다 손님");
+		when(voiceClient.synthesize(anyString())).thenReturn(new byte[512 * 1024]);
+		when(inferenceClient.isReady()).thenReturn(true);
+		when(inferenceClient.complete(any())).thenReturn("{\"대사\": \"영수증부터 보여 드릴게요.\", \"진정함\": false}");
 	}
 
 	@Test
