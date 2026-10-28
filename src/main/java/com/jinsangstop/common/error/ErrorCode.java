@@ -18,6 +18,27 @@ public enum ErrorCode {
 	NOT_FOUND(HttpStatus.NOT_FOUND, "요청한 주소를 찾을 수 없습니다."),
 	/** 회원가입 시 이미 쓰이는 아이디 */
 	DUPLICATE_LOGIN_ID(HttpStatus.CONFLICT, "이미 사용 중인 아이디입니다."),
+	/** 지원하지 않는 HTTP 메서드 */
+	METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "지원하지 않는 요청 방식입니다."),
+	/** 요청 본문 형식(Content-Type)이 맞지 않음 — 예: 턴 제출에 오디오가 아닌 형식 */
+	UNSUPPORTED_MEDIA_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "지원하지 않는 요청 형식입니다."),
+
+	/** 다른 훈련 세션이 진행 중 — 시연 장비 한 대가 한 번에 한 세션만 돌린다 */
+	TRAINING_SESSION_BUSY(HttpStatus.CONFLICT, "다른 훈련이 진행 중입니다. 잠시 후 다시 시도해 주세요."),
+	/** 음성 서비스가 응답하지 않거나 준비되지 않음 */
+	TRAINING_ENVIRONMENT_NOT_READY(HttpStatus.SERVICE_UNAVAILABLE, "훈련 환경이 준비되지 않았습니다. 잠시 후 다시 시도해 주세요."),
+	/** 없는 세션이거나 다른 사용자의 세션 */
+	TRAINING_SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "훈련 세션을 찾을 수 없습니다."),
+	/** 같은 세션의 이전 턴을 아직 처리 중 — 두 번째 제출은 버린다 */
+	TURN_ALREADY_IN_PROGRESS(HttpStatus.CONFLICT, "이전 발화를 처리하고 있어요. 잠시만 기다려 주세요."),
+	/** 이미 끝난 세션에 턴을 제출함 */
+	TRAINING_SESSION_NOT_IN_PROGRESS(HttpStatus.CONFLICT, "이미 끝난 훈련 세션입니다."),
+	/** 전사 결과가 비었음 — 발화 턴을 소모하지 않는다 */
+	EMPTY_TRANSCRIPT(HttpStatus.UNPROCESSABLE_CONTENT, "말소리가 들리지 않았어요. 다시 말해 주세요."),
+	/** 보낸 오디오를 읽지 못함 — 다시 녹음하면 풀리는 문제 */
+	AUDIO_UNREADABLE(HttpStatus.UNPROCESSABLE_CONTENT, "녹음을 읽지 못했어요. 다시 말해 주세요."),
+	/** 오디오가 허용 크기를 넘음 */
+	AUDIO_TOO_LARGE(HttpStatus.CONTENT_TOO_LARGE, "녹음이 너무 깁니다. 나눠서 말해 주세요."),
 	/** 해당 식별자의 공식 카드가 없음 */
 	CARD_NOT_FOUND(HttpStatus.NOT_FOUND, "시나리오 카드를 찾을 수 없습니다."),
 	/** 처리하지 못한 서버 내부 오류 */

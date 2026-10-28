@@ -22,6 +22,7 @@ public class OpenApiConfig {
 	public static final String TAG_AUTH = "1. 인증";
 	public static final String TAG_INTENSITY = "2. 강도";
 	public static final String TAG_CARD = "3. 시나리오 카드";
+	public static final String TAG_TRAINING = "4. 훈련 세션";
 
 	/** 세션 쿠키 인증 스킴 이름 — 로그인이 필요한 API에 @SecurityRequirement로 붙인다 */
 	public static final String SESSION_COOKIE_SCHEME = "sessionCookie";
@@ -54,6 +55,16 @@ public class OpenApiConfig {
 
 			강도 선택의 초기값은 `defaultLevel`(= 1)을 쓴다. 숫자를 프론트에 박지 않는다.
 
+			## 연동 순서 — 훈련 화면 (로그인 필요)
+			| 단계 | 화면 | 호출 | 실패 시 안내 |
+			|---|---|---|---|
+			| 1 | 훈련 시작 | `POST /api/training-sessions` `{cardId, intensity}` | `409 TRAINING_SESSION_BUSY` 대기 안내 · `503 TRAINING_ENVIRONMENT_NOT_READY` 환경 미준비 |
+			| 2 | 마이크 권한 | 브라우저 `getUserMedia` | — |
+			| 3 | 말하기 → "말하기 끝내기" | `POST /api/training-sessions/{sessionId}/turns` (본문 = 녹음 Blob) | `422 EMPTY_TRANSCRIPT`·`AUDIO_UNREADABLE` 다시 말하기 |
+			| 4 | 전사 표시 | 응답의 `userTranscript`를 내 말로 표시 | — |
+
+			음성 서비스는 브라우저에서 직접 부르지 않는다. 오디오는 서버에 저장되지 않는다.
+
 			## 오류 응답
 			성공이 아니면 **모든 API가 같은 형식**을 돌려준다. `code`로 분기하고, `message`는 사용자에게 그대로 보여 줘도 되는 문장이다.
 			```json
@@ -67,6 +78,16 @@ public class OpenApiConfig {
 			| `NOT_FOUND` | 404 | 없는 주소 |
 			| `CARD_NOT_FOUND` | 404 | 없는 카드 |
 			| `DUPLICATE_LOGIN_ID` | 409 | 가입 시 이미 쓰는 아이디 |
+			| `TRAINING_SESSION_BUSY` | 409 | 다른 훈련이 진행 중 — 대기 안내 |
+			| `TRAINING_SESSION_NOT_FOUND` | 404 | 없거나 남의 세션 |
+			| `TRAINING_SESSION_NOT_IN_PROGRESS` | 409 | 이미 끝난 세션에 턴 제출 |
+			| `TURN_ALREADY_IN_PROGRESS` | 409 | 같은 세션의 이전 턴을 처리 중 — 버튼을 두 번 누른 경우. 무시해도 된다 |
+			| `EMPTY_TRANSCRIPT` | 422 | 말소리가 없음 — 턴 미소모, 다시 말하기 |
+			| `AUDIO_UNREADABLE` | 422 | 녹음을 읽지 못함 — 다시 말하기 |
+			| `AUDIO_TOO_LARGE` | 413 | 녹음이 너무 김 |
+			| `METHOD_NOT_ALLOWED` | 405 | 지원하지 않는 HTTP 메서드 |
+			| `UNSUPPORTED_MEDIA_TYPE` | 415 | 본문 형식이 맞지 않음(턴 제출은 audio/*) |
+			| `TRAINING_ENVIRONMENT_NOT_READY` | 503 | 음성 서비스 미준비·장애 — 다시 말해도 풀리지 않음 |
 			| `INTERNAL_ERROR` | 500 | 서버 내부 오류 |
 
 			## 꼭 지킬 것
@@ -95,6 +116,7 @@ public class OpenApiConfig {
 				.tags(List.of(
 						new Tag().name(TAG_AUTH).description("회원가입·로그인·로그아웃·현재 사용자 — 세션 쿠키 방식"),
 						new Tag().name(TAG_INTENSITY).description("강도 선택 화면 — 기본값, 단계별로 민원인이 할 수 있는 행동, 고지 확인 필요 여부"),
-						new Tag().name(TAG_CARD).description("공식 카드 목록·상세 화면 — 진정 조건·양보 불가선은 내려가지 않는다")));
+						new Tag().name(TAG_CARD).description("공식 카드 목록·상세 화면 — 진정 조건·양보 불가선은 내려가지 않는다"),
+						new Tag().name(TAG_TRAINING).description("훈련 세션 시작·발화 턴 제출 — 로그인 필요")));
 	}
 }

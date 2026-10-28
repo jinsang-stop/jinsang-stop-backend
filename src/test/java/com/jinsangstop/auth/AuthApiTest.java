@@ -2,6 +2,7 @@ package com.jinsangstop.auth;
 
 import com.jinsangstop.auth.domain.UserAccount;
 import com.jinsangstop.auth.domain.UserAccountRepository;
+import com.jinsangstop.support.TestDataCleaner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -52,7 +53,7 @@ class AuthApiTest {
 	/** 테스트끼리 계정이 섞이지 않게 매번 비운다. */
 	@BeforeEach
 	void clearUsers() {
-		userAccountRepository.deleteAll();
+		TestDataCleaner.clearUserData(jdbcTemplate);
 	}
 
 	@Test
