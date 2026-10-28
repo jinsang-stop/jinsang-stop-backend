@@ -1,0 +1,22 @@
+# 로컬 개발용 MySQL. 기본 포트 3306을 쓰므로 PC에 깔린 MySQL·MariaDB 서비스는 멈춰 둔다.
+# 비밀번호는 로컬 개발 전용 값이다. 운영 장비에서는 DB_* 환경변수로 덮어쓴다.
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: jinsangstop-mysql
+    environment:
+      MYSQL_DATABASE: jinsangstop
+      MYSQL_USER: jinsangstop
+      MYSQL_PASSWORD: jinsangstop-local
+      MYSQL_ROOT_PASSWORD: jinsangstop-root-local
+      TZ: Asia/Seoul
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - jinsangstop-mysql:/var/lib/mysql
+
+volumes:
+  jinsangstop-mysql:

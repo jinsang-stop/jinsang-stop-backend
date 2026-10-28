@@ -1,0 +1,8 @@
+# 테스트 전용 설정 — MySQL 대신 MySQL 호환 모드의 인메모리 H2를 쓴다.
+# Flyway 마이그레이션은 운영과 같은 파일을 그대로 돌린다.
+spring:
+  datasource:
+    url: jdbc:h2:mem:jinsangstop;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
