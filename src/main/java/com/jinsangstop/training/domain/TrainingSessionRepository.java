@@ -23,6 +23,7 @@ public interface TrainingSessionRepository extends JpaRepository<TrainingSession
 	/** 성장 기록 후보 — 같은 사용자·카드·강도·상태의 세션을 종료 시각 순으로 */
 	List<TrainingSession> findAllByUserIdAndCardIdAndIntensityAndStatusOrderByEndedAtAsc(
 			Long userId, Long cardId, int intensity, TrainingSessionStatus status);
+
 	/** 사용자의 특정 상태 세션 — 진행 중 세션은 시연 장비 전체에서 하나뿐이므로 많아야 하나다. */
 	Optional<TrainingSession> findByUserIdAndStatus(Long userId, TrainingSessionStatus status);
 
