@@ -63,6 +63,9 @@ jinsangstop:
   # 절대선 문서 — 출력 검사의 금칙 목록(ADR-0005)
   safety:
     absolute-lines: ${ABSOLUTE_LINES_DOCUMENT:classpath:safety/absolute-lines.txt}
+  # 성장 기록 편입 — 경계 설정 하한선(1~5). 비워 두면 모든 세션이 "편입 보류"다. 파일럿 데이터로 정한다(ADR-0004)
+  growth:
+    boundary-threshold: ${GROWTH_BOUNDARY_THRESHOLD:}
   training:
     # 마지막 활동 뒤로 이 시간 동안 아무것도 없으면 방치된 세션으로 보고 다음 시작 요청 때 정리한다
     idle-timeout: ${TRAINING_IDLE_TIMEOUT:10m}
