@@ -12,7 +12,8 @@ public record ErrorResponse(
 		int status,
 		@Schema(description = "오류 코드 — 프론트엔드는 이 값으로 분기한다",
 				example = "CARD_NOT_FOUND",
-				allowableValues = {"INVALID_REQUEST", "NOT_FOUND", "CARD_NOT_FOUND", "INTERNAL_ERROR"},
+				allowableValues = {"INVALID_REQUEST", "UNAUTHORIZED", "LOGIN_FAILED", "NOT_FOUND", "CARD_NOT_FOUND",
+						"DUPLICATE_LOGIN_ID", "INTERNAL_ERROR"},
 				requiredMode = Schema.RequiredMode.REQUIRED)
 		String code,
 		@Schema(description = "사용자에게 그대로 보여 줘도 되는 메시지", example = "시나리오 카드를 찾을 수 없습니다.",
@@ -23,5 +24,10 @@ public record ErrorResponse(
 	/** 오류 코드의 기본 메시지로 응답을 만든다. */
 	public static ErrorResponse of(ErrorCode errorCode) {
 		return new ErrorResponse(errorCode.status().value(), errorCode.name(), errorCode.message());
+	}
+
+	/** 오류 코드는 그대로 두고 메시지만 바꿔 만든다(입력 검증 실패 시 어떤 값이 잘못됐는지 알려줄 때). */
+	public static ErrorResponse of(ErrorCode errorCode, String message) {
+		return new ErrorResponse(errorCode.status().value(), errorCode.name(), message);
 	}
 }
