@@ -23,12 +23,17 @@ public record TrainingSessionResponse(
 		int intensity,
 		@Schema(description = "하드 턴 상한 — 진행 표시(예: 3/12)에 쓴다", example = "12", requiredMode = Schema.RequiredMode.REQUIRED)
 		int hardTurnLimit,
-		@Schema(description = "세션 상태", example = "IN_PROGRESS", requiredMode = Schema.RequiredMode.REQUIRED)
+		@Schema(description = "세션 상태 — 진행 중이 아니면 종료 사유다. IN_PROGRESS / CALMED(진정 종료) / TURN_LIMIT_REACHED(진정시키지 못한 채 종료) / ABORTED(사용자 중단) / SYSTEM_ERROR(시스템 오류로 중단) / ABANDONED(방치되어 정리됨)",
+				example = "IN_PROGRESS", requiredMode = Schema.RequiredMode.REQUIRED)
 		TrainingSessionStatus status,
 		@Schema(description = "확정된 발화 턴 수(시작 직후 0)", example = "0", requiredMode = Schema.RequiredMode.REQUIRED)
 		int turnCount,
 		@Schema(description = "시작 시각", example = "2026-10-28T14:00:00", requiredMode = Schema.RequiredMode.REQUIRED)
-		LocalDateTime startedAt
+		LocalDateTime startedAt,
+		@Schema(description = "소요 턴 수 — 진정 종료(CALMED)일 때만 값이 있다", example = "null")
+		Integer turnsToCalm,
+		@Schema(description = "종료 시각 — 진행 중이면 null", example = "null")
+		LocalDateTime endedAt
 ) {
 
 	/** 세션과 카드에서 만든다. */
@@ -41,6 +46,8 @@ public record TrainingSessionResponse(
 				card.getHardTurnLimit(),
 				session.getStatus(),
 				session.getTurnCount(),
-				session.getStartedAt());
+				session.getStartedAt(),
+				session.getTurnsToCalm(),
+				session.getEndedAt());
 	}
 }

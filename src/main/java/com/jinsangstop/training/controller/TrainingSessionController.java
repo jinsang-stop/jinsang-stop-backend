@@ -38,7 +38,7 @@ import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * 훈련 세션 시작, 발화 턴 제출, 턴 점수 조회 API. 로그인이 필요하다.
+ * 훈련 세션 시작·조회·중단, 발화 턴 제출, 턴 점수 조회 API. 로그인이 필요하다.
  */
 @Tag(name = OpenApiConfig.TAG_TRAINING)
 @RestController
@@ -55,7 +55,24 @@ public class TrainingSessionController {
 			  "hardTurnLimit": 12,
 			  "status": "IN_PROGRESS",
 			  "turnCount": 0,
-			  "startedAt": "2026-10-28T14:00:00"
+			  "startedAt": "2026-10-28T14:00:00",
+			  "turnsToCalm": null,
+			  "endedAt": null
+			}""";
+
+	/** Swagger 예시 — 중단된 세션 */
+	public static final String ABORTED_EXAMPLE = """
+			{
+			  "sessionId": 1,
+			  "cardId": 1,
+			  "complainantRoleName": "손님",
+			  "intensity": 1,
+			  "hardTurnLimit": 12,
+			  "status": "ABORTED",
+			  "turnCount": 3,
+			  "startedAt": "2026-10-28T14:00:00",
+			  "turnsToCalm": null,
+			  "endedAt": "2026-10-28T14:03:10"
 			}""";
 
 	/** Swagger 예시 — 확정된 턴 */
@@ -74,7 +91,9 @@ public class TrainingSessionController {
 			    "emotionalStability": { "score": 4, "reason": "도발에도 차분한 존댓말을 유지했다." },
 			    "empathyAcknowledgement": { "score": 3, "reason": "짧은 사과로 불편을 인정했다." },
 			    "boundarySetting": { "score": 3, "reason": "거절할 요구가 아직 없는 인사였다." }
-			  }
+			  },
+			  "sessionStatus": "IN_PROGRESS",
+			  "turnsToCalm": null
 			}""";
 
 	/** Swagger 예시 — 턴 점수(채점됨) */
@@ -153,6 +172,7 @@ public class TrainingSessionController {
 
 					**응답 처리**
 					- `complainantAudio`(Base64 WAV)를 디코딩해 바로 재생하고, `complainantLine`을 역할명과 함께 표시한다.
+					- `sessionStatus`가 `IN_PROGRESS`가 아니면 이 턴으로 세션이 끝났다 — `CALMED`(진정 종료, `turnsToCalm`에 소요 턴 수)·`TURN_LIMIT_REACHED`(진정시키지 못한 채 종료). 음성 재생 뒤 종료 화면으로 보낸다.
 					- `score`로 태도 3축을 갱신한다. `status`가 `PENDING`이면 채점이 아직 안 끝난 것이므로 점수 조회 API를 잠시 뒤(예: 1초 간격) 다시 부른다.
 					  `FAILED`면 세 축 모두 "채점되지 않음" — 마지막 성공값을 유지하고 표시만 한다. 세 축을 합산하지 않는다.
 					  ```js
@@ -207,6 +227,54 @@ public class TrainingSessionController {
 			HttpServletRequest request) throws IOException {
 		byte[] audio = readAudio(request);
 		return trainingSessionService.submitTurn(loginUser.getUserId(), sessionId, audio, request.getContentType());
+	}
+
+	/** 세션 상태 조회 */
+	@Operation(summary = "훈련 세션 조회",
+			description = "세션의 현재 상태(진행 중이면 IN_PROGRESS, 끝났으면 종료 사유)와 턴 수를 돌려준다. 새로고침 뒤 훈련 화면을 복원할 때 쓴다.",
+			security = @SecurityRequirement(name = OpenApiConfig.SESSION_COOKIE_SCHEME))
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "조회 성공",
+					content = @Content(schema = @Schema(implementation = TrainingSessionResponse.class),
+							examples = @ExampleObject(name = "진행 중", value = SESSION_EXAMPLE))),
+			@ApiResponse(responseCode = "401", description = "로그인 필요(UNAUTHORIZED)",
+					content = @Content(schema = @Schema(implementation = ErrorResponse.class),
+							examples = @ExampleObject(name = "UNAUTHORIZED", value = ErrorExamples.UNAUTHORIZED))),
+			@ApiResponse(responseCode = "404", description = "없거나 남의 세션(TRAINING_SESSION_NOT_FOUND)",
+					content = @Content(schema = @Schema(implementation = ErrorResponse.class),
+							examples = @ExampleObject(name = "TRAINING_SESSION_NOT_FOUND", value = ErrorExamples.TRAINING_SESSION_NOT_FOUND)))
+	})
+	@GetMapping("/{sessionId}")
+	public TrainingSessionResponse get(@AuthenticationPrincipal LoginUser loginUser,
+			@Parameter(description = "세션 식별자", example = "1") @PathVariable Long sessionId) {
+		return trainingSessionService.get(loginUser.getUserId(), sessionId);
+	}
+
+	/** 사용자 중단 */
+	@Operation(summary = "훈련 세션 중단",
+			description = """
+					세션을 **즉시** 끝낸다(종료 사유 `ABORTED`). 확인창 없이 한 번의 조작으로 부른다.
+					처리 중이던 턴이 있으면 그 결과는 버려진다(그 턴 요청은 `409 TRAINING_SESSION_NOT_IN_PROGRESS`로 끝난다).
+					중단하면 동시 세션 잠금이 풀려 바로 새 훈련을 시작할 수 있다. 중단한 세션은 성장 기록에 들어가지 않는다.""",
+			security = @SecurityRequirement(name = OpenApiConfig.SESSION_COOKIE_SCHEME))
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "중단됨",
+					content = @Content(schema = @Schema(implementation = TrainingSessionResponse.class),
+							examples = @ExampleObject(name = "중단된 세션", value = ABORTED_EXAMPLE))),
+			@ApiResponse(responseCode = "401", description = "로그인 필요(UNAUTHORIZED)",
+					content = @Content(schema = @Schema(implementation = ErrorResponse.class),
+							examples = @ExampleObject(name = "UNAUTHORIZED", value = ErrorExamples.UNAUTHORIZED))),
+			@ApiResponse(responseCode = "404", description = "없거나 남의 세션(TRAINING_SESSION_NOT_FOUND)",
+					content = @Content(schema = @Schema(implementation = ErrorResponse.class),
+							examples = @ExampleObject(name = "TRAINING_SESSION_NOT_FOUND", value = ErrorExamples.TRAINING_SESSION_NOT_FOUND))),
+			@ApiResponse(responseCode = "409", description = "이미 끝난 세션(TRAINING_SESSION_NOT_IN_PROGRESS)",
+					content = @Content(schema = @Schema(implementation = ErrorResponse.class),
+							examples = @ExampleObject(name = "TRAINING_SESSION_NOT_IN_PROGRESS", value = ErrorExamples.TRAINING_SESSION_NOT_IN_PROGRESS)))
+	})
+	@PostMapping("/{sessionId}/abort")
+	public TrainingSessionResponse abort(@AuthenticationPrincipal LoginUser loginUser,
+			@Parameter(description = "세션 식별자", example = "1") @PathVariable Long sessionId) {
+		return trainingSessionService.abort(loginUser.getUserId(), sessionId);
 	}
 
 	/** 턴 점수 조회 */

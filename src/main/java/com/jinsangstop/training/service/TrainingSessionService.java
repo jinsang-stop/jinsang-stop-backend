@@ -224,8 +224,8 @@ public class TrainingSessionService {
 		long synthesizedNanos = System.nanoTime();
 		Optional<Optional<AttitudeScores>> scoredInTime = awaitScoring(scoring);
 
-		// 5) 저장
-		UtteranceTurn saved = transactionTemplate.execute(status -> {
+		// 5) 저장 + 종료 판정
+		PersistedTurn persisted = transactionTemplate.execute(status -> {
 			TrainingSession locked = trainingSessionRepository.findByIdForUpdate(sessionId)
 					.orElseThrow(() -> new BusinessException(ErrorCode.TRAINING_SESSION_NOT_FOUND));
 			// 처리하는 사이 세션이 끝났을 수 있으므로 잠근 뒤 다시 본다 — 끝났으면 이 턴 결과는 버린다
@@ -236,8 +236,15 @@ public class TrainingSessionService {
 			int number = locked.confirmTurn(now);
 			UtteranceTurn turn = UtteranceTurn.of(sessionId, number, transcript, reply.line(), reply.calmed(), now);
 			scoredInTime.ifPresent(result -> applyScoring(turn, result));
-			return utteranceTurnRepository.save(turn);
+			UtteranceTurn savedTurn = utteranceTurnRepository.save(turn);
+			// 진정했으면 진정 종료, 아니면 하드 턴 상한 도달 여부 — 끝나면 진행 중 자리가 비워진다
+			if (locked.judgeEnd(reply.calmed(), card.getHardTurnLimit(), now)) {
+				log.info("훈련 세션 종료: sessionId={}, reason={}, turnsToCalm={}", sessionId, locked.getStatus(),
+						locked.getTurnsToCalm());
+			}
+			return new PersistedTurn(savedTurn, locked.getStatus(), locked.getTurnsToCalm());
 		});
+		UtteranceTurn saved = persisted.turn();
 		if (scoredInTime.isEmpty()) {
 			// 채점이 턴 응답보다 늦다 — 끝나는 대로 저장한다. 프론트는 점수 조회 API로 다시 받는다
 			int number = saved.getTurnNumber();
@@ -251,7 +258,44 @@ public class TrainingSessionService {
 				saved.getScoreStatus());
 
 		return new UtteranceTurnResponse(sessionId, saved.getTurnNumber(), transcript, reply.line(), reply.calmed(),
-				Base64.getEncoder().encodeToString(speech), SYNTHESIZED_AUDIO_TYPE, TurnScoreResponse.from(saved));
+				Base64.getEncoder().encodeToString(speech), SYNTHESIZED_AUDIO_TYPE, TurnScoreResponse.from(saved),
+				persisted.sessionStatus(), persisted.turnsToCalm());
+	}
+
+	/** 저장 트랜잭션 결과 — 저장된 턴과 종료 판정 후 세션 상태 */
+	private record PersistedTurn(UtteranceTurn turn, TrainingSessionStatus sessionStatus, Integer turnsToCalm) {
+	}
+
+	/**
+	 * 사용자 중단 — 즉시 끝낸다. 처리 중이던 턴은 저장 단계에서 세션이 끝난 것을 보고 버려진다.
+	 * 진행 중 자리가 비워져 바로 새 세션을 시작할 수 있다.
+	 */
+	public TrainingSessionResponse abort(Long userId, Long sessionId) {
+		TrainingSession aborted = transactionTemplate.execute(status -> {
+			TrainingSession owned = trainingSessionRepository.findByIdAndUserId(sessionId, userId)
+					.orElseThrow(() -> new BusinessException(ErrorCode.TRAINING_SESSION_NOT_FOUND));
+			TrainingSession locked = trainingSessionRepository.findByIdForUpdate(owned.getId())
+					.orElseThrow(() -> new BusinessException(ErrorCode.TRAINING_SESSION_NOT_FOUND));
+			if (!locked.isInProgress()) {
+				throw new BusinessException(ErrorCode.TRAINING_SESSION_NOT_IN_PROGRESS);
+			}
+			locked.abort(now());
+			log.info("훈련 세션 사용자 중단: sessionId={}, turnCount={}", sessionId, locked.getTurnCount());
+			return locked;
+		});
+		return TrainingSessionResponse.of(aborted, cardOf(aborted));
+	}
+
+	/** 세션 상태 조회 — 새로고침 뒤 화면 복원용. 본인 세션만. */
+	public TrainingSessionResponse get(Long userId, Long sessionId) {
+		TrainingSession session = trainingSessionRepository.findByIdAndUserId(sessionId, userId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.TRAINING_SESSION_NOT_FOUND));
+		return TrainingSessionResponse.of(session, cardOf(session));
+	}
+
+	private ScenarioCard cardOf(TrainingSession session) {
+		return scenarioCardRepository.findById(session.getCardId())
+				.orElseThrow(() -> new BusinessException(ErrorCode.CARD_NOT_FOUND));
 	}
 
 	/** 턴 점수 조회 — 채점이 턴 응답보다 늦게 끝났을 때 프론트가 다시 받는다. 본인 세션만. */

@@ -63,6 +63,7 @@ public class OpenApiConfig {
 			| 3 | 말하기 → "말하기 끝내기" | `POST /api/training-sessions/{sessionId}/turns` (본문 = 녹음 Blob) | `422 EMPTY_TRANSCRIPT`·`AUDIO_UNREADABLE` 다시 말하기 |
 			| 4 | 응답 표시 | `userTranscript`(내 말) · `complainantLine`(역할명과 함께) 표시, `complainantAudio` 재생 | `500 SESSION_ENDED_BY_SYSTEM_ERROR` 종료 안내 |
 			| 5 | 태도 3축 갱신 | 응답의 `score`. `PENDING`이면 `GET /api/training-sessions/{sessionId}/turns/{n}/score`를 잠시 뒤 다시 | `FAILED`면 "채점되지 않음"(마지막 성공값 유지) |
+			| 6 | 종료 | 턴 응답 `sessionStatus`가 `CALMED`·`TURN_LIMIT_REACHED`면 종료 화면. 중단 버튼은 `POST /api/training-sessions/{sessionId}/abort`(확인창 없이) | — |
 
 			음성·추론 서비스는 브라우저에서 직접 부르지 않는다. 사용자 오디오와 민원인 합성 음성은 서버에 저장되지 않는다.
 
@@ -120,6 +121,6 @@ public class OpenApiConfig {
 						new Tag().name(TAG_AUTH).description("회원가입·로그인·로그아웃·현재 사용자 — 세션 쿠키 방식"),
 						new Tag().name(TAG_INTENSITY).description("강도 선택 화면 — 기본값, 단계별로 민원인이 할 수 있는 행동, 고지 확인 필요 여부"),
 						new Tag().name(TAG_CARD).description("공식 카드 목록·상세 화면 — 진정 조건·양보 불가선은 내려가지 않는다"),
-						new Tag().name(TAG_TRAINING).description("훈련 세션 시작·발화 턴 제출·턴 점수 — 로그인 필요")));
+						new Tag().name(TAG_TRAINING).description("훈련 세션 시작·조회·중단, 발화 턴 제출, 턴 점수 — 로그인 필요")));
 	}
 }
