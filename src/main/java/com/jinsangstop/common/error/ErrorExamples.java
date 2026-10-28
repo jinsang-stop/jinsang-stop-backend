@@ -42,6 +42,10 @@ public final class ErrorExamples {
 	public static final String TURN_NOT_FOUND = """
 			{ "status": 404, "code": "TURN_NOT_FOUND", "message": "발화 턴을 찾을 수 없습니다." }""";
 
+	/** 409 — 이전 턴 처리 중 */
+	public static final String TURN_ALREADY_IN_PROGRESS = """
+			{ "status": 409, "code": "TURN_ALREADY_IN_PROGRESS", "message": "이전 발화를 처리하고 있어요. 잠시만 기다려 주세요." }""";
+
 	/** 409 — 끝난 세션 */
 	public static final String TRAINING_SESSION_NOT_IN_PROGRESS = """
 			{ "status": 409, "code": "TRAINING_SESSION_NOT_IN_PROGRESS", "message": "이미 끝난 훈련 세션입니다." }""";
