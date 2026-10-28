@@ -75,6 +75,7 @@ class OpenApiExampleTest {
 				.andExpect(jsonPath("$.tags[1].name").value("2. 강도"))
 				.andExpect(jsonPath("$.tags[2].name").value("3. 시나리오 카드"))
 				.andExpect(jsonPath("$.components.securitySchemes.sessionCookie.in").value("cookie"))
+				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.passwordWithinBcryptLimit").doesNotExist())
 				.andExpect(jsonPath("$.paths['/api/auth/me'].get.security[0].sessionCookie").exists())
 				.andExpect(jsonPath("$.paths['/api/cards/{cardId}'].get.responses['404'].content['application/json'].examples.CARD_NOT_FOUND").exists())
 				.andExpect(jsonPath("$.paths['/api/intensities'].get.responses['200'].content['application/json'].examples").exists());
