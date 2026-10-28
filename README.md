@@ -118,6 +118,7 @@ MySQL 없이 H2로 돈다.
 | `TRAINING_SESSION_BUSY` | 409 | 다른 훈련이 진행 중 |
 | `TRAINING_SESSION_NOT_FOUND` | 404 | 없거나 남의 세션 |
 | `TRAINING_SESSION_NOT_IN_PROGRESS` | 409 | 이미 끝난 세션에 턴 제출 |
+| `TURN_ALREADY_IN_PROGRESS` | 409 | 같은 세션의 이전 턴을 처리 중(중복 제출) |
 | `EMPTY_TRANSCRIPT` | 422 | 전사가 비었음 — 턴 미소모 |
 | `AUDIO_UNREADABLE` | 422 | 음성 서비스가 오디오를 읽지 못함 |
 | `AUDIO_TOO_LARGE` | 413 | 오디오가 `TRAINING_MAX_AUDIO_BYTES` 초과 |
