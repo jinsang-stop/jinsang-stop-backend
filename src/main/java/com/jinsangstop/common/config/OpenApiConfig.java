@@ -24,6 +24,7 @@ public class OpenApiConfig {
 	public static final String TAG_CARD = "3. 시나리오 카드";
 	public static final String TAG_TRAINING = "4. 훈련 세션";
 	public static final String TAG_REPORT = "5. 리포트";
+	public static final String TAG_GROWTH = "6. 성장 기록";
 
 	/** 세션 쿠키 인증 스킴 이름 — 로그인이 필요한 API에 @SecurityRequirement로 붙인다 */
 	public static final String SESSION_COOKIE_SCHEME = "sessionCookie";
@@ -67,6 +68,7 @@ public class OpenApiConfig {
 			| 6 | 종료 | 턴 응답 `sessionStatus`가 `CALMED`·`TURN_LIMIT_REACHED`면 종료 화면. 중단 버튼은 `POST /api/training-sessions/{sessionId}/abort`(확인창 없이) | — |
 
 			종료 화면 → 리포트: `GET /api/training-sessions/{sessionId}/report` — 턴 타임라인, 축별 점수, 종료 사유, 성장 기록 미편입 사유.
+			성장 그래프: `GET /api/growth-records?cardId=&intensity=` — 강도마다 따로 부르고, 강도가 다른 점을 한 선으로 잇지 않는다. 같은 카드 재도전은 같은 `cardId`·`intensity`로 세션을 다시 시작한다.
 
 			음성·추론 서비스는 브라우저에서 직접 부르지 않는다. 사용자 오디오와 민원인 합성 음성은 서버에 저장되지 않는다.
 
@@ -126,6 +128,7 @@ public class OpenApiConfig {
 						new Tag().name(TAG_INTENSITY).description("강도 선택 화면 — 기본값, 단계별로 민원인이 할 수 있는 행동, 고지 확인 필요 여부"),
 						new Tag().name(TAG_CARD).description("공식 카드 목록·상세 화면 — 진정 조건·양보 불가선은 내려가지 않는다"),
 						new Tag().name(TAG_TRAINING).description("훈련 세션 시작·조회·중단, 발화 턴 제출, 턴 점수 — 로그인 필요"),
-						new Tag().name(TAG_REPORT).description("세션 리포트 — 턴 타임라인, 종료 사유, 성장 기록 미편입 사유")));
+						new Tag().name(TAG_REPORT).description("세션 리포트 — 턴 타임라인, 종료 사유, 성장 기록 미편입 사유"),
+						new Tag().name(TAG_GROWTH).description("성장 기록 — 같은 카드·강도의 소요 턴 수 시계열")));
 	}
 }
