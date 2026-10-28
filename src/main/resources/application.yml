@@ -51,6 +51,15 @@ jinsangstop:
     temperature: ${ACTING_TEMPERATURE:0.8}
     max-tokens: ${ACTING_MAX_TOKENS:200}
     warmup-enabled: ${ACTING_WARMUP_ENABLED:true}
+  # 태도 3축 채점 — 슬롯 1, temperature 0, 고정 시드(ADR-0009)
+  scoring:
+    seed: ${SCORING_SEED:42}
+    max-tokens: ${SCORING_MAX_TOKENS:300}
+    # PARALLEL: 연기와 동시에 / SEQUENTIAL: 연기 응답 직후(합성 구간과 겹치게)
+    mode: ${SCORING_MODE:PARALLEL}
+    # 합성이 끝난 뒤 채점 결과를 턴 응답에 싣기 위해 더 기다리는 최대 시간. 넘으면 PENDING으로 응답하고 나중에 저장
+    response-wait: ${SCORING_RESPONSE_WAIT:1s}
+    warmup-enabled: ${SCORING_WARMUP_ENABLED:true}
   # 절대선 문서 — 출력 검사의 금칙 목록(ADR-0005)
   safety:
     absolute-lines: ${ABSOLUTE_LINES_DOCUMENT:classpath:safety/absolute-lines.txt}

@@ -13,12 +13,15 @@ import com.jinsangstop.complainant.ComplainantPromptAssembler.PastTurn;
 import com.jinsangstop.inference.InferenceClient;
 import com.jinsangstop.inference.InferenceServiceException;
 import com.jinsangstop.intensity.domain.Intensity;
+import com.jinsangstop.scoring.AttitudeScorer;
+import com.jinsangstop.scoring.AttitudeScores;
 import com.jinsangstop.training.domain.TrainingSession;
 import com.jinsangstop.training.domain.TrainingSessionRepository;
 import com.jinsangstop.training.domain.TrainingSessionStatus;
 import com.jinsangstop.training.domain.UtteranceTurn;
 import com.jinsangstop.training.domain.UtteranceTurnRepository;
 import com.jinsangstop.training.dto.TrainingSessionResponse;
+import com.jinsangstop.training.dto.TurnScoreResponse;
 import com.jinsangstop.training.dto.UtteranceTurnResponse;
 import com.jinsangstop.voice.VoiceClient;
 import com.jinsangstop.voice.VoiceServiceException;
@@ -39,11 +42,16 @@ import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 훈련 세션 시작과 발화 턴 처리를 담당한다.
  * 턴 하나: 전사(음성 서비스) → 민원인 연기(추론 서비스) → 출력 검사 → 합성(음성 서비스) → 저장.
+ * 태도 3축 채점은 연기와 병렬로 돌린다(설정으로 연기 직후 순차 전환). 채점이 턴 응답보다 늦으면 끝나는 대로 저장한다.
  * 외부 호출(수 초)은 DB 트랜잭션 밖에서 하고, 결과를 저장하는 짧은 구간만 트랜잭션으로 묶는다.
  */
 @Service
@@ -60,6 +68,7 @@ public class TrainingSessionService {
 	private final VoiceClient voiceClient;
 	private final InferenceClient inferenceClient;
 	private final ComplainantActor complainantActor;
+	private final AttitudeScorer attitudeScorer;
 	private final TransactionTemplate transactionTemplate;
 	private final TaskExecutor turnExecutor;
 	private final Clock clock;
@@ -67,6 +76,18 @@ public class TrainingSessionService {
 	private final Duration idleTimeout;
 	/** 세션 시작 시 연기 프롬프트 캐시 예열 여부 */
 	private final boolean warmupEnabled;
+	/** 채점 호출 시점 — 연기와 병렬, 또는 연기 응답 직후(합성 구간과 겹치게) */
+	private final ScoringMode scoringMode;
+	/** 합성이 끝난 뒤 채점 결과를 턴 응답에 싣기 위해 더 기다리는 최대 시간 */
+	private final Duration scoreResponseWait;
+
+	/** 채점 호출 시점(PRD v2 "채점 · 종료 · 강도 규칙") */
+	public enum ScoringMode {
+		/** 연기와 동시에 — 기본값 */
+		PARALLEL,
+		/** 연기 응답 직후 — 연기 지연이 목표를 넘을 때 쓰는 전환 경로 */
+		SEQUENTIAL
+	}
 
 	public TrainingSessionService(TrainingSessionRepository trainingSessionRepository,
 			UtteranceTurnRepository utteranceTurnRepository,
@@ -74,22 +95,28 @@ public class TrainingSessionService {
 			VoiceClient voiceClient,
 			InferenceClient inferenceClient,
 			ComplainantActor complainantActor,
+			AttitudeScorer attitudeScorer,
 			TransactionTemplate transactionTemplate,
 			@Qualifier(AsyncConfig.TURN_EXECUTOR) TaskExecutor turnExecutor,
 			Clock clock,
 			@Value("${jinsangstop.training.idle-timeout}") Duration idleTimeout,
-			@Value("${jinsangstop.acting.warmup-enabled}") boolean warmupEnabled) {
+			@Value("${jinsangstop.acting.warmup-enabled}") boolean warmupEnabled,
+			@Value("${jinsangstop.scoring.mode}") ScoringMode scoringMode,
+			@Value("${jinsangstop.scoring.response-wait}") Duration scoreResponseWait) {
 		this.trainingSessionRepository = trainingSessionRepository;
 		this.utteranceTurnRepository = utteranceTurnRepository;
 		this.scenarioCardRepository = scenarioCardRepository;
 		this.voiceClient = voiceClient;
 		this.inferenceClient = inferenceClient;
 		this.complainantActor = complainantActor;
+		this.attitudeScorer = attitudeScorer;
 		this.transactionTemplate = transactionTemplate;
 		this.turnExecutor = turnExecutor;
 		this.clock = clock;
 		this.idleTimeout = idleTimeout;
 		this.warmupEnabled = warmupEnabled;
+		this.scoringMode = scoringMode;
+		this.scoreResponseWait = scoreResponseWait;
 	}
 
 	/**
@@ -178,20 +205,33 @@ public class TrainingSessionService {
 			throw new BusinessException(ErrorCode.EMPTY_TRANSCRIPT);
 		}
 
-		// 2) 민원인 연기 + 출력 검사
 		int turnNumber = session.getTurnCount() + 1;
-		List<PastTurn> history = utteranceTurnRepository.findAllBySessionIdOrderByTurnNumberAsc(sessionId).stream()
+		List<UtteranceTurn> pastTurns = utteranceTurnRepository.findAllBySessionIdOrderByTurnNumberAsc(sessionId);
+		List<PastTurn> history = pastTurns.stream()
 				.map(t -> new PastTurn(t.getUserTranscript(), t.getComplainantLine()))
 				.toList();
+		String previousComplainantLine = pastTurns.isEmpty() ? null : pastTurns.getLast().getComplainantLine();
+
+		// 2) 채점 — 병렬 모드면 연기와 동시에 시작한다. 채점은 민원인이 이번에 무슨 말을 할지 모른다
+		CompletableFuture<Optional<AttitudeScores>> scoring = scoringMode == ScoringMode.PARALLEL
+				? startScoring(card, previousComplainantLine, transcript)
+				: null;
+
+		// 3) 민원인 연기 + 출력 검사
 		ComplainantReply reply = act(session, card, intensity, history, transcript, turnNumber);
 		long actedNanos = System.nanoTime();
+		if (scoring == null) {
+			// 순차 모드 — 연기 응답 직후 시작해 합성 구간과 겹치게 한다
+			scoring = startScoring(card, previousComplainantLine, transcript);
+		}
 
-		// 3) 합성 — 출력 검사를 통과한 대사만 여기까지 온다
+		// 4) 합성 — 출력 검사를 통과한 대사만 여기까지 온다
 		byte[] speech = synthesize(reply.line());
 		long synthesizedNanos = System.nanoTime();
+		Optional<Optional<AttitudeScores>> scoredInTime = awaitScoring(scoring);
 
-		// 4) 저장
-		int confirmedTurn = transactionTemplate.execute(status -> {
+		// 5) 저장
+		UtteranceTurn saved = transactionTemplate.execute(status -> {
 			TrainingSession locked = trainingSessionRepository.findByIdForUpdate(sessionId)
 					.orElseThrow(() -> new BusinessException(ErrorCode.TRAINING_SESSION_NOT_FOUND));
 			// 처리하는 사이 세션이 끝났을 수 있으므로 잠근 뒤 다시 본다 — 끝났으면 이 턴 결과는 버린다
@@ -200,17 +240,76 @@ public class TrainingSessionService {
 			}
 			LocalDateTime now = now();
 			int number = locked.confirmTurn(now);
-			utteranceTurnRepository.save(UtteranceTurn.of(sessionId, number, transcript, reply.line(), reply.calmed(), now));
-			return number;
+			UtteranceTurn turn = UtteranceTurn.of(sessionId, number, transcript, reply.line(), reply.calmed(), now);
+			scoredInTime.ifPresent(result -> applyScoring(turn, result));
+			return utteranceTurnRepository.save(turn);
 		});
+		if (scoredInTime.isEmpty()) {
+			// 채점이 턴 응답보다 늦다 — 끝나는 대로 저장한다. 프론트는 점수 조회 API로 다시 받는다
+			int number = saved.getTurnNumber();
+			scoring.thenAccept(result -> recordLateScore(sessionId, number, result));
+		}
 
 		// 턴 지연 측정 로그 — "말하기 끝내기" 요청 도착부터 민원인 음성 반환까지(서버 구간)
-		log.info("턴 지연: sessionId={}, turn={}, totalMs={}, transcribeMs={}, actMs={}, actAttempts={}, synthesizeMs={}",
-				sessionId, confirmedTurn, millis(startedNanos, System.nanoTime()), millis(startedNanos, transcribedNanos),
-				millis(transcribedNanos, actedNanos), reply.attempts(), millis(actedNanos, synthesizedNanos));
+		log.info("턴 지연: sessionId={}, turn={}, totalMs={}, transcribeMs={}, actMs={}, actAttempts={}, synthesizeMs={}, scoring={}",
+				sessionId, saved.getTurnNumber(), millis(startedNanos, System.nanoTime()), millis(startedNanos, transcribedNanos),
+				millis(transcribedNanos, actedNanos), reply.attempts(), millis(actedNanos, synthesizedNanos),
+				saved.getScoreStatus());
 
-		return new UtteranceTurnResponse(sessionId, confirmedTurn, transcript, reply.line(), reply.calmed(),
-				Base64.getEncoder().encodeToString(speech), SYNTHESIZED_AUDIO_TYPE);
+		return new UtteranceTurnResponse(sessionId, saved.getTurnNumber(), transcript, reply.line(), reply.calmed(),
+				Base64.getEncoder().encodeToString(speech), SYNTHESIZED_AUDIO_TYPE, TurnScoreResponse.from(saved));
+	}
+
+	/** 턴 점수 조회 — 채점이 턴 응답보다 늦게 끝났을 때 프론트가 다시 받는다. 본인 세션만. */
+	public TurnScoreResponse getTurnScore(Long userId, Long sessionId, int turnNumber) {
+		trainingSessionRepository.findByIdAndUserId(sessionId, userId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.TRAINING_SESSION_NOT_FOUND));
+		return utteranceTurnRepository.findBySessionIdAndTurnNumber(sessionId, turnNumber)
+				.map(TurnScoreResponse::from)
+				.orElseThrow(() -> new BusinessException(ErrorCode.TURN_NOT_FOUND));
+	}
+
+	/** 채점을 실행기에 올린다. AttitudeScorer는 예외를 던지지 않고 실패를 빈 값으로 돌려준다 */
+	private CompletableFuture<Optional<AttitudeScores>> startScoring(ScenarioCard card, String previousComplainantLine,
+			String transcript) {
+		try {
+			return CompletableFuture.supplyAsync(
+					() -> attitudeScorer.score(card.getSituation(), previousComplainantLine, transcript), turnExecutor);
+		} catch (TaskRejectedException e) {
+			// 실행기 대기열이 가득 차면 채점을 포기하고 정보 없음으로 둔다 — 턴 진행은 막지 않는다
+			log.warn("채점을 실행기에 올리지 못해 정보 없음으로 저장: {}", e.getMessage());
+			return CompletableFuture.completedFuture(Optional.empty());
+		}
+	}
+
+	/** 합성이 끝난 뒤 채점을 잠깐 더 기다린다. 제때 끝나면 결과, 아니면 빈 값 */
+	private Optional<Optional<AttitudeScores>> awaitScoring(CompletableFuture<Optional<AttitudeScores>> scoring) {
+		try {
+			return Optional.of(scoring.get(scoreResponseWait.toMillis(), TimeUnit.MILLISECONDS));
+		} catch (TimeoutException e) {
+			return Optional.empty();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			return Optional.empty();
+		} catch (ExecutionException e) {
+			return Optional.of(Optional.empty());
+		}
+	}
+
+	/** 채점 결과를 턴에 반영한다 — 실패면 정보 없음 */
+	private static void applyScoring(UtteranceTurn turn, Optional<AttitudeScores> result) {
+		result.ifPresentOrElse(turn::applyScores, turn::markScoringFailed);
+	}
+
+	/** 늦게 끝난 채점을 저장한다. 그 사이 세션이 끝났어도 점수는 남긴다(리포트에 쓰인다) */
+	private void recordLateScore(Long sessionId, int turnNumber, Optional<AttitudeScores> result) {
+		try {
+			transactionTemplate.executeWithoutResult(status -> utteranceTurnRepository
+					.findBySessionIdAndTurnNumber(sessionId, turnNumber)
+					.ifPresent(turn -> applyScoring(turn, result)));
+		} catch (RuntimeException e) {
+			log.warn("늦은 채점 저장 실패: sessionId={}, turn={}, message={}", sessionId, turnNumber, e.getMessage());
+		}
 	}
 
 	/** 민원인 연기. 출력 검사 재시도 실패 → 세션 종료(시스템 오류), 추론 서비스 장애 → 503(턴 미소모). */

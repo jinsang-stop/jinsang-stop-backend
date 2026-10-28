@@ -79,4 +79,23 @@ class ExecutorRejectionTest {
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.status").value("IN_PROGRESS"));
 	}
+
+	@Test
+	@DisplayName("채점을 실행기에 올리지 못해도 턴은 201이고 점수는 정보 없음(FAILED)")
+	void scoringRejectedTurnStillConfirmed() throws Exception {
+		MvcResult signup = mockMvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
+						.content("{\"loginId\":\"reject02\",\"password\":\"password1234\",\"displayName\":\"테스터\"}"))
+				.andExpect(status().isCreated()).andReturn();
+		MockHttpSession user = (MockHttpSession) signup.getRequest().getSession(false);
+		String body = mockMvc.perform(post("/api/training-sessions").session(user)
+						.contentType(MediaType.APPLICATION_JSON).content("{\"cardId\":1,\"intensity\":1}"))
+				.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+		long sessionId = Long.parseLong(body.replaceAll(".*\"sessionId\":(\\d+).*", "$1"));
+
+		mockMvc.perform(post("/api/training-sessions/" + sessionId + "/turns").session(user)
+						.contentType("audio/webm").content(new byte[]{1, 2, 3}))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.turnNumber").value(1))
+				.andExpect(jsonPath("$.score.status").value("FAILED"));
+	}
 }

@@ -11,3 +11,7 @@ spring:
 jinsangstop:
   acting:
     warmup-enabled: false
+  scoring:
+    warmup-enabled: false
+    # 테스트에서는 모의 채점이 곧바로 끝나므로 넉넉히 기다려 응답에 점수가 실리게 한다
+    response-wait: 5s

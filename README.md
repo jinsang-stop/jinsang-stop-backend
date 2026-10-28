@@ -66,6 +66,10 @@ MySQL 없이 H2로 돈다.
 | `ACTING_TEMPERATURE` / `ACTING_MAX_TOKENS` | 연기 temperature · 최대 토큰 | `0.8` / `200` |
 | `ACTING_WARMUP_ENABLED` | 세션 시작 시 연기 프롬프트 캐시 예열 | `true` |
 | `ABSOLUTE_LINES_DOCUMENT` | 절대선 문서 위치 | `classpath:safety/absolute-lines.txt` |
+| `SCORING_SEED` / `SCORING_MAX_TOKENS` | 채점 고정 시드 · 최대 토큰 | `42` / `300` |
+| `SCORING_MODE` | 채점 호출 시점 `PARALLEL` / `SEQUENTIAL` | `PARALLEL` |
+| `SCORING_RESPONSE_WAIT` | 턴 응답에 점수를 싣기 위해 더 기다리는 시간 | `1s` |
+| `SCORING_WARMUP_ENABLED` | 기동 시 루브릭 캐시 예열 | `true` |
 
 ## API 요약
 
@@ -79,7 +83,8 @@ MySQL 없이 H2로 돈다.
 | `GET /api/cards/{cardId}` | `공식 카드` 상세 | 불필요 |
 | `GET /api/intensities` | `강도` 기본값 · 공통 안내 · 단계별 허용 행동 · 고지 확인 필요 여부 | 불필요 |
 | `POST /api/training-sessions` | `훈련 세션` 시작 `{cardId, intensity}` | 필요 |
-| `POST /api/training-sessions/{sessionId}/turns` | `발화 턴` 제출 — 본문 = 오디오 바이트(`audio/*`). 응답에 `민원인` 대사·합성 음성(Base64 WAV)·진정 여부 | 필요 |
+| `POST /api/training-sessions/{sessionId}/turns` | `발화 턴` 제출 — 본문 = 오디오 바이트(`audio/*`). 응답에 `민원인` 대사·합성 음성(Base64 WAV)·진정 여부·`태도 3축` 점수 | 필요 |
+| `GET /api/training-sessions/{sessionId}/turns/{turnNumber}/score` | 턴 점수 — 채점이 턴 응답보다 늦을 때 다시 받는다 | 필요 |
 
 카드 응답에는 진정 조건과 양보 불가선이 **필드 자체로 없다**. DB에만 있고 `민원인` 연기 프롬프트 조립에만 쓴다.
 
@@ -118,6 +123,21 @@ MySQL 없이 H2로 돈다.
 JINSANGSTOP_RUN_INFERENCE_IT=1 ./gradlew test --tests "*IntensityCapIntegrationTest"
 ```
 
+### 태도 3축 채점
+
+- 축마다 **1~5 정수 + 80자 이내 근거**. 세 축은 독립이며 합산 점수는 어디에도 없다(ADR-0002, ADR-0004).
+- 루브릭은 `ScoringPromptAssembler.RUBRIC`. 직무 조치의 옳고 그름은 채점하지 않는다고 명시하고, 회피·침묵은 정서 안정 가점 없음, 과잉 사과·요구 수용은 공감 인정 아님, 공감 없는 단호한 거절도 경계 설정 가점이라고 적었다.
+- 채점은 직전 `민원인` 대사와 이번 직원 발화만 본다 — 이번 턴의 `민원인` 대사, 카드의 진정 조건·양보 불가선은 모른다.
+- 호출은 슬롯 1, temperature 0, 고정 시드(`SCORING_SEED`), JSON 스키마. 응답 범위·필수 값은 `AttitudeScorer`가 다시 검증하고, 하나라도 어기거나 호출이 실패하면 `FAILED` — 점수는 NULL(정보 없음)이지 0이 아니다.
+- 기본은 연기와 **병렬**(`SCORING_MODE=PARALLEL`). `SEQUENTIAL`이면 연기 응답 직후 시작해 합성 구간과 겹친다.
+- 합성이 끝난 뒤 `SCORING_RESPONSE_WAIT`(기본 1초)까지 기다려 끝나면 턴 응답에 싣고, 아니면 `PENDING`으로 응답한 뒤 끝나는 대로 저장한다. 프론트는 점수 조회 API로 다시 받는다.
+- 서버가 뜨면 루브릭을 슬롯 1에 캐시 예열한다(`SCORING_WARMUP_ENABLED`).
+- **저장 발화 채점 테스트**(재현성 → 축 독립성 → 직무 조치 비채점): 실제 `추론 서비스`를 띄우고 아래를 돌린다. 발화 묶음은 `src/test/resources/scoring/saved-utterances.txt`, 결과는 `build/reports/scoring.md`.
+
+```bash
+JINSANGSTOP_RUN_INFERENCE_IT=1 ./gradlew test --tests "*ScoringIntegrationTest"
+```
+
 ### 오류 응답 형식
 
 모든 API가 같은 형식을 쓴다. 프론트엔드는 `code`로 분기하고 `message`를 그대로 띄운다.
@@ -138,6 +158,7 @@ JINSANGSTOP_RUN_INFERENCE_IT=1 ./gradlew test --tests "*IntensityCapIntegrationT
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | 본문 형식이 맞지 않음(턴 제출은 `audio/*`) |
 | `TRAINING_SESSION_BUSY` | 409 | 다른 훈련이 진행 중 |
 | `TRAINING_SESSION_NOT_FOUND` | 404 | 없거나 남의 세션 |
+| `TURN_NOT_FOUND` | 404 | 세션에 그 번호의 턴이 없음 |
 | `TRAINING_SESSION_NOT_IN_PROGRESS` | 409 | 이미 끝난 세션에 턴 제출 |
 | `TURN_ALREADY_IN_PROGRESS` | 409 | 같은 세션의 이전 턴을 처리 중(중복 제출) |
 | `EMPTY_TRANSCRIPT` | 422 | 전사가 비었음 — 턴 미소모 |
@@ -173,9 +194,10 @@ JINSANGSTOP_RUN_INFERENCE_IT=1 ./gradlew test --tests "*IntensityCapIntegrationT
 | 추론 서비스 | `InferenceClient` / `HttpInferenceClient` | — |
 | 출력 검사 | `OutputChecker` (금칙 목록 `AbsoluteLineList`) | — |
 | 민원인 연기 | `ComplainantActor` / `ComplainantPromptAssembler` | — |
+| 태도 3축 | `AttitudeAxis`, `AttitudeScores` — 정서 안정 `emotionalStability` · 공감 인정 `empathyAcknowledgement` · 경계 설정 `boundarySetting` | `utterance_turn.*_score`, `*_reason` |
+| 채점 | `AttitudeScorer` / `ScoringPromptAssembler`, 상태 `ScoreStatus`(PENDING·SCORED·FAILED) | `utterance_turn.score_status` |
 
-이후 슬라이스에서 쓸 이름도 같은 규칙을 따른다 — `태도 3축` `AttitudeScore`(정서 안정 `emotionalStability` · 공감 인정 `empathyAcknowledgement` · 경계 설정 `boundarySetting`),
-`진정 종료` `CALMED`, `소요 턴 수` `turnsToCalm`, `성장 기록` `GrowthRecord`.
+이후 슬라이스에서 쓸 이름도 같은 규칙을 따른다 — `진정 종료` `CALMED`, `소요 턴 수` `turnsToCalm`, `성장 기록` `GrowthRecord`.
 
 ## 패키지 구조
 
@@ -189,6 +211,7 @@ com.jinsangstop
 ├── intensity       강도 (domain · dto · controller)
 ├── complainant     민원인 연기 프롬프트 조립 · 출력 검사(safety)
 ├── inference       추론 서비스 HTTP 클라이언트
+├── scoring         태도 3축 채점 루브릭 · 채점기
 ├── training        훈련 세션 · 발화 턴 (domain · dto · service · controller)
 └── voice           음성 서비스 HTTP 클라이언트
 ```

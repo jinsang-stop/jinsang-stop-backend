@@ -3,8 +3,7 @@ package com.jinsangstop.training.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
- * 확정된 발화 턴 — 사용자 전사 + 민원인 응답(대사·합성 음성·진정 여부).
- * 점수(#5)는 이후 슬라이스에서 붙는다.
+ * 확정된 발화 턴 — 사용자 전사 + 민원인 응답(대사·합성 음성·진정 여부) + 태도 3축 점수.
  */
 @Schema(description = "확정된 발화 턴")
 public record UtteranceTurnResponse(
@@ -26,6 +25,9 @@ public record UtteranceTurnResponse(
 				requiredMode = Schema.RequiredMode.REQUIRED)
 		String complainantAudio,
 		@Schema(description = "합성 음성 형식", example = "audio/wav", requiredMode = Schema.RequiredMode.REQUIRED)
-		String complainantAudioContentType
+		String complainantAudioContentType,
+		@Schema(description = "이 턴의 태도 3축 점수. 채점이 늦으면 status=PENDING으로 오고, 점수 조회 API로 다시 받는다",
+				requiredMode = Schema.RequiredMode.REQUIRED)
+		TurnScoreResponse score
 ) {
 }

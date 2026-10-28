@@ -29,6 +29,8 @@ public enum ErrorCode {
 	TRAINING_ENVIRONMENT_NOT_READY(HttpStatus.SERVICE_UNAVAILABLE, "훈련 환경이 준비되지 않았습니다. 잠시 후 다시 시도해 주세요."),
 	/** 없는 세션이거나 다른 사용자의 세션 */
 	TRAINING_SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "훈련 세션을 찾을 수 없습니다."),
+	/** 세션에 그 번호의 턴이 없음 */
+	TURN_NOT_FOUND(HttpStatus.NOT_FOUND, "발화 턴을 찾을 수 없습니다."),
 	/** 같은 세션의 이전 턴을 아직 처리 중 — 두 번째 제출은 버린다 */
 	TURN_ALREADY_IN_PROGRESS(HttpStatus.CONFLICT, "이전 발화를 처리하고 있어요. 잠시만 기다려 주세요."),
 	/** 이미 끝난 세션에 턴을 제출함 */
