@@ -46,6 +46,10 @@ public final class ErrorExamples {
 	public static final String TRAINING_SESSION_IN_PROGRESS = """
 			{ "status": 409, "code": "TRAINING_SESSION_IN_PROGRESS", "message": "아직 진행 중인 훈련입니다. 훈련이 끝나면 리포트를 볼 수 있어요." }""";
 
+	/** 409 — 이전 턴 처리 중 */
+	public static final String TURN_ALREADY_IN_PROGRESS = """
+			{ "status": 409, "code": "TURN_ALREADY_IN_PROGRESS", "message": "이전 발화를 처리하고 있어요. 잠시만 기다려 주세요." }""";
+
 	/** 409 — 끝난 세션 */
 	public static final String TRAINING_SESSION_NOT_IN_PROGRESS = """
 			{ "status": 409, "code": "TRAINING_SESSION_NOT_IN_PROGRESS", "message": "이미 끝난 훈련 세션입니다." }""";

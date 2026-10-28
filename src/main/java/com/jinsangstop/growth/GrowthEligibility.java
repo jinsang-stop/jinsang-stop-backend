@@ -61,8 +61,10 @@ public class GrowthEligibility {
 		if (session.getStatus() != TrainingSessionStatus.CALMED) {
 			reasons.add(ExclusionReason.NOT_CALMED);
 		}
-		boolean allScored = !turns.isEmpty() && turns.stream().allMatch(t -> t.getScoreStatus() == ScoreStatus.SCORED);
-		if (!allScored) {
+		// 턴이 하나도 없으면(첫 턴에서 시스템 오류 등) "채점되지 않은 턴이 있다"는 사유는 사실이 아니므로 붙이지 않는다.
+		// 그런 세션은 진정 종료일 수 없어 NOT_CALMED가 이미 붙는다.
+		boolean hasUnscoredTurn = turns.stream().anyMatch(t -> t.getScoreStatus() != ScoreStatus.SCORED);
+		if (hasUnscoredTurn) {
 			reasons.add(ExclusionReason.UNSCORED_TURNS);
 		}
 		AxisAverages averages = averages(turns);

@@ -33,7 +33,7 @@ public record UtteranceTurnResponse(
 		@Schema(description = "이 턴 처리 후 세션 상태 — IN_PROGRESS면 계속, CALMED·TURN_LIMIT_REACHED면 세션이 끝났으니 종료 화면으로",
 				example = "IN_PROGRESS", requiredMode = Schema.RequiredMode.REQUIRED)
 		TrainingSessionStatus sessionStatus,
-		@Schema(description = "소요 턴 수 — 이 턴으로 진정 종료됐을 때만 값이 있다", example = "null")
+		@Schema(description = "소요 턴 수 — 이 턴으로 진정 종료됐을 때만 값이 있다")
 		Integer turnsToCalm
 ) {
 }

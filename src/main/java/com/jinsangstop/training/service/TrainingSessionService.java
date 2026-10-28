@@ -30,6 +30,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -148,7 +149,12 @@ public class TrainingSessionService {
 
 		if (warmupEnabled) {
 			// 사용자가 첫 마디를 하는 동안 슬롯 0에 카드·강도 프롬프트를 올려 둔다(ADR-0009)
-			turnExecutor.execute(() -> complainantActor.warmup(card, intensity, actingSeed));
+			try {
+				turnExecutor.execute(() -> complainantActor.warmup(card, intensity, actingSeed));
+			} catch (TaskRejectedException e) {
+				// 세션은 이미 만들어졌다 — 예열은 성능 최적화일 뿐이므로 실패해도 시작을 막지 않는다
+				log.warn("연기 프롬프트 캐시 예열을 실행기에 올리지 못했다(무시): {}", e.getMessage());
+			}
 		}
 		return TrainingSessionResponse.of(session, card);
 	}
@@ -310,8 +316,14 @@ public class TrainingSessionService {
 	/** 채점을 실행기에 올린다. AttitudeScorer는 예외를 던지지 않고 실패를 빈 값으로 돌려준다 */
 	private CompletableFuture<Optional<AttitudeScores>> startScoring(ScenarioCard card, String previousComplainantLine,
 			String transcript) {
-		return CompletableFuture.supplyAsync(
-				() -> attitudeScorer.score(card.getSituation(), previousComplainantLine, transcript), turnExecutor);
+		try {
+			return CompletableFuture.supplyAsync(
+					() -> attitudeScorer.score(card.getSituation(), previousComplainantLine, transcript), turnExecutor);
+		} catch (TaskRejectedException e) {
+			// 실행기 대기열이 가득 차면 채점을 포기하고 정보 없음으로 둔다 — 턴 진행은 막지 않는다
+			log.warn("채점을 실행기에 올리지 못해 정보 없음으로 저장: {}", e.getMessage());
+			return CompletableFuture.completedFuture(Optional.empty());
+		}
 	}
 
 	/** 합성이 끝난 뒤 채점을 잠깐 더 기다린다. 제때 끝나면 결과, 아니면 빈 값 */

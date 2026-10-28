@@ -30,9 +30,9 @@ public record TrainingSessionResponse(
 		int turnCount,
 		@Schema(description = "시작 시각", example = "2026-10-28T14:00:00", requiredMode = Schema.RequiredMode.REQUIRED)
 		LocalDateTime startedAt,
-		@Schema(description = "소요 턴 수 — 진정 종료(CALMED)일 때만 값이 있다", example = "null")
+		@Schema(description = "소요 턴 수 — 진정 종료(CALMED)일 때만 값이 있다")
 		Integer turnsToCalm,
-		@Schema(description = "종료 시각 — 진행 중이면 null", example = "null")
+		@Schema(description = "종료 시각 — 진행 중이면 null")
 		LocalDateTime endedAt
 ) {
 
