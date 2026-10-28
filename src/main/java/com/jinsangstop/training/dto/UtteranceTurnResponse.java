@@ -1,5 +1,6 @@
 package com.jinsangstop.training.dto;
 
+import com.jinsangstop.training.domain.TrainingSessionStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
@@ -28,6 +29,11 @@ public record UtteranceTurnResponse(
 		String complainantAudioContentType,
 		@Schema(description = "이 턴의 태도 3축 점수. 채점이 늦으면 status=PENDING으로 오고, 점수 조회 API로 다시 받는다",
 				requiredMode = Schema.RequiredMode.REQUIRED)
-		TurnScoreResponse score
+		TurnScoreResponse score,
+		@Schema(description = "이 턴 처리 후 세션 상태 — IN_PROGRESS면 계속, CALMED·TURN_LIMIT_REACHED면 세션이 끝났으니 종료 화면으로",
+				example = "IN_PROGRESS", requiredMode = Schema.RequiredMode.REQUIRED)
+		TrainingSessionStatus sessionStatus,
+		@Schema(description = "소요 턴 수 — 이 턴으로 진정 종료됐을 때만 값이 있다")
+		Integer turnsToCalm
 ) {
 }

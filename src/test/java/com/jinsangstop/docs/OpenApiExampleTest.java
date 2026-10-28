@@ -79,7 +79,12 @@ class OpenApiExampleTest {
 				.andExpect(jsonPath("$.paths['/api/training-sessions/{sessionId}/turns'].post.responses['422'].content['application/json'].examples.EMPTY_TRANSCRIPT").exists())
 				.andExpect(jsonPath("$.components.securitySchemes.sessionCookie.in").value("cookie"))
 				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.passwordWithinBcryptLimit").doesNotExist())
+				// null일 수 있는 필드에 문자열 "null" 예시가 붙으면 프론트 타입 생성이 string으로 잘못 잡힌다
+				.andExpect(jsonPath("$.components.schemas.TrainingSessionResponse.properties.turnsToCalm.example").doesNotExist())
+				.andExpect(jsonPath("$.components.schemas.TrainingSessionResponse.properties.endedAt.example").doesNotExist())
+				.andExpect(jsonPath("$.components.schemas.UtteranceTurnResponse.properties.turnsToCalm.example").doesNotExist())
 				.andExpect(jsonPath("$.paths['/api/auth/me'].get.security[0].sessionCookie").exists())
+				.andExpect(jsonPath("$.paths['/api/training-sessions/current'].get.responses['204']").exists())
 				.andExpect(jsonPath("$.paths['/api/cards/{cardId}'].get.responses['404'].content['application/json'].examples.CARD_NOT_FOUND").exists())
 				.andExpect(jsonPath("$.paths['/api/intensities'].get.responses['200'].content['application/json'].examples").exists());
 	}

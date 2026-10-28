@@ -85,6 +85,9 @@ MySQL 없이 H2로 돈다.
 | `POST /api/training-sessions` | `훈련 세션` 시작 `{cardId, intensity}` | 필요 |
 | `POST /api/training-sessions/{sessionId}/turns` | `발화 턴` 제출 — 본문 = 오디오 바이트(`audio/*`). 응답에 `민원인` 대사·합성 음성(Base64 WAV)·진정 여부·`태도 3축` 점수 | 필요 |
 | `GET /api/training-sessions/{sessionId}/turns/{turnNumber}/score` | 턴 점수 — 채점이 턴 응답보다 늦을 때 다시 받는다 | 필요 |
+| `GET /api/training-sessions/current` | 내 진행 중 세션 — 없으면 204. 세션 식별자를 잃었을 때 이어 하기·중단 | 필요 |
+| `GET /api/training-sessions/{sessionId}` | 세션 상태·종료 사유 — 새로고침 뒤 복원 | 필요 |
+| `POST /api/training-sessions/{sessionId}/abort` | 사용자 중단 — 즉시 종료 | 필요 |
 
 카드 응답에는 진정 조건과 양보 불가선이 **필드 자체로 없다**. DB에만 있고 `민원인` 연기 프롬프트 조립에만 쓴다.
 
@@ -138,6 +141,23 @@ JINSANGSTOP_RUN_INFERENCE_IT=1 ./gradlew test --tests "*IntensityCapIntegrationT
 JINSANGSTOP_RUN_INFERENCE_IT=1 ./gradlew test --tests "*ScoringIntegrationTest"
 ```
 
+### 종료 판정
+
+`training_session.status`가 진행 중이 아니면 그 값이 곧 종료 사유이고, 세션마다 하나만 기록된다.
+
+| 상태 | 뜻 | `turns_to_calm` |
+|---|---|---|
+| `CALMED` | `진정 종료` — 턴 응답의 진정 여부가 참 | 그 턴 번호 |
+| `TURN_LIMIT_REACHED` | 진정시키지 못한 채 종료 — `하드 턴 상한` 도달 | NULL |
+| `ABORTED` | 사용자 중단(`POST .../abort`) | NULL |
+| `SYSTEM_ERROR` | 시스템 오류로 중단 — 출력 검사 재시도 실패 | NULL |
+| `ABANDONED` | 방치되어 다음 시작 요청 때 정리됨 | NULL |
+
+- 판정은 턴을 저장하는 트랜잭션 안에서 한다. 마지막 턴에서 진정하면 상한보다 `진정 종료`가 우선한다.
+- 끝나면 `active_slot`을 비워 바로 새 세션을 시작할 수 있다. 종료된 세션에 턴을 내면 `409 TRAINING_SESSION_NOT_IN_PROGRESS`.
+- 중단하면 처리 중이던 턴은 저장 단계에서 세션이 끝난 것을 보고 버려진다(그 턴 요청은 409).
+- 채점이 종료 뒤에 끝나도 점수는 저장한다(리포트에 쓰인다).
+
 ### 오류 응답 형식
 
 모든 API가 같은 형식을 쓴다. 프론트엔드는 `code`로 분기하고 `message`를 그대로 띄운다.
@@ -190,6 +210,8 @@ JINSANGSTOP_RUN_INFERENCE_IT=1 ./gradlew test --tests "*ScoringIntegrationTest"
 | 사용자 계정 | `UserAccount` (세션 안에서는 `LoginUser`) | `user_account` |
 | 훈련 세션 | `TrainingSession` | `training_session` |
 | 발화 턴 | `UtteranceTurn` | `utterance_turn` |
+| 진정 종료 · 진정시키지 못한 채 종료 · 사용자 중단 · 시스템 오류로 중단 | `TrainingSessionStatus.CALMED` · `TURN_LIMIT_REACHED` · `ABORTED` · `SYSTEM_ERROR` | `training_session.status` |
+| 소요 턴 수 | `turnsToCalm` | `training_session.turns_to_calm` |
 | 음성 서비스 | `VoiceClient` / `HttpVoiceClient` | — |
 | 추론 서비스 | `InferenceClient` / `HttpInferenceClient` | — |
 | 출력 검사 | `OutputChecker` (금칙 목록 `AbsoluteLineList`) | — |
@@ -197,7 +219,7 @@ JINSANGSTOP_RUN_INFERENCE_IT=1 ./gradlew test --tests "*ScoringIntegrationTest"
 | 태도 3축 | `AttitudeAxis`, `AttitudeScores` — 정서 안정 `emotionalStability` · 공감 인정 `empathyAcknowledgement` · 경계 설정 `boundarySetting` | `utterance_turn.*_score`, `*_reason` |
 | 채점 | `AttitudeScorer` / `ScoringPromptAssembler`, 상태 `ScoreStatus`(PENDING·SCORED·FAILED) | `utterance_turn.score_status` |
 
-이후 슬라이스에서 쓸 이름도 같은 규칙을 따른다 — `진정 종료` `CALMED`, `소요 턴 수` `turnsToCalm`, `성장 기록` `GrowthRecord`.
+이후 슬라이스에서 쓸 이름도 같은 규칙을 따른다 — `성장 기록` `GrowthRecord`.
 
 ## 패키지 구조
 
