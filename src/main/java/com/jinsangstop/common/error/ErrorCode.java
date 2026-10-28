@@ -31,6 +31,8 @@ public enum ErrorCode {
 	TRAINING_SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "훈련 세션을 찾을 수 없습니다."),
 	/** 세션에 그 번호의 턴이 없음 */
 	TURN_NOT_FOUND(HttpStatus.NOT_FOUND, "발화 턴을 찾을 수 없습니다."),
+	/** 아직 진행 중인 세션의 리포트를 요청함 */
+	TRAINING_SESSION_IN_PROGRESS(HttpStatus.CONFLICT, "아직 진행 중인 훈련입니다. 훈련이 끝나면 리포트를 볼 수 있어요."),
 	/** 같은 세션의 이전 턴을 아직 처리 중 — 두 번째 제출은 버린다 */
 	TURN_ALREADY_IN_PROGRESS(HttpStatus.CONFLICT, "이전 발화를 처리하고 있어요. 잠시만 기다려 주세요."),
 	/** 이미 끝난 세션에 턴을 제출함 */

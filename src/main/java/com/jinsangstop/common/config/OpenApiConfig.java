@@ -23,6 +23,7 @@ public class OpenApiConfig {
 	public static final String TAG_INTENSITY = "2. 강도";
 	public static final String TAG_CARD = "3. 시나리오 카드";
 	public static final String TAG_TRAINING = "4. 훈련 세션";
+	public static final String TAG_REPORT = "5. 리포트";
 
 	/** 세션 쿠키 인증 스킴 이름 — 로그인이 필요한 API에 @SecurityRequirement로 붙인다 */
 	public static final String SESSION_COOKIE_SCHEME = "sessionCookie";
@@ -66,6 +67,8 @@ public class OpenApiConfig {
 			| 5 | 태도 3축 갱신 | 응답의 `score`. `PENDING`이면 `GET /api/training-sessions/{sessionId}/turns/{n}/score`를 잠시 뒤 다시 | `FAILED`면 "채점되지 않음"(마지막 성공값 유지) |
 			| 6 | 종료 | 턴 응답 `sessionStatus`가 `CALMED`·`TURN_LIMIT_REACHED`면 종료 화면. 중단 버튼은 `POST /api/training-sessions/{sessionId}/abort`(확인창 없이) | — |
 
+			종료 화면 → 리포트: `GET /api/training-sessions/{sessionId}/report` — 턴 타임라인, 축별 점수, 종료 사유, 성장 기록 미편입 사유.
+
 			음성·추론 서비스는 브라우저에서 직접 부르지 않는다. 사용자 오디오와 민원인 합성 음성은 서버에 저장되지 않는다.
 
 			## 오류 응답
@@ -84,6 +87,7 @@ public class OpenApiConfig {
 			| `TRAINING_SESSION_BUSY` | 409 | 다른 훈련이 진행 중 — 대기 안내 |
 			| `TRAINING_SESSION_NOT_FOUND` | 404 | 없거나 남의 세션 |
 			| `TURN_NOT_FOUND` | 404 | 세션에 그 번호의 턴이 없음 |
+			| `TRAINING_SESSION_IN_PROGRESS` | 409 | 진행 중인 세션의 리포트 요청 |
 			| `TRAINING_SESSION_NOT_IN_PROGRESS` | 409 | 이미 끝난 세션에 턴 제출 |
 			| `TURN_ALREADY_IN_PROGRESS` | 409 | 같은 세션의 이전 턴을 처리 중 — 버튼을 두 번 누른 경우. 무시해도 된다 |
 			| `EMPTY_TRANSCRIPT` | 422 | 말소리가 없음 — 턴 미소모, 다시 말하기 |
@@ -123,6 +127,7 @@ public class OpenApiConfig {
 						new Tag().name(TAG_AUTH).description("회원가입·로그인·로그아웃·현재 사용자 — 세션 쿠키 방식"),
 						new Tag().name(TAG_INTENSITY).description("강도 선택 화면 — 기본값, 단계별로 민원인이 할 수 있는 행동, 고지 확인 필요 여부"),
 						new Tag().name(TAG_CARD).description("공식 카드 목록·상세 화면 — 진정 조건·양보 불가선은 내려가지 않는다"),
-						new Tag().name(TAG_TRAINING).description("훈련 세션 시작·조회·중단, 발화 턴 제출, 턴 점수 — 로그인 필요")));
+						new Tag().name(TAG_TRAINING).description("훈련 세션 시작·조회·중단, 발화 턴 제출, 턴 점수 — 로그인 필요"),
+						new Tag().name(TAG_REPORT).description("세션 리포트 — 턴 타임라인, 종료 사유, 성장 기록 미편입 사유")));
 	}
 }
