@@ -8,6 +8,7 @@ import com.jinsangstop.common.error.ErrorExamples;
 import com.jinsangstop.common.error.ErrorResponse;
 import com.jinsangstop.training.dto.StartTrainingSessionRequest;
 import com.jinsangstop.training.dto.TrainingSessionResponse;
+import com.jinsangstop.training.dto.TurnScoreResponse;
 import com.jinsangstop.training.dto.UtteranceTurnResponse;
 import com.jinsangstop.training.service.TrainingSessionService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -25,6 +26,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -36,7 +38,7 @@ import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * 훈련 세션 시작과 발화 턴 제출 API. 로그인이 필요하다.
+ * 훈련 세션 시작, 발화 턴 제출, 턴 점수 조회 API. 로그인이 필요하다.
  */
 @Tag(name = OpenApiConfig.TAG_TRAINING)
 @RestController
@@ -65,8 +67,29 @@ public class TrainingSessionController {
 			  "complainantLine": "죄송하면 다예요? 지금 바로 환불해 달라고요.",
 			  "calmed": false,
 			  "complainantAudio": "UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=",
-			  "complainantAudioContentType": "audio/wav"
+			  "complainantAudioContentType": "audio/wav",
+			  "score": {
+			    "turnNumber": 1,
+			    "status": "SCORED",
+			    "emotionalStability": { "score": 4, "reason": "도발에도 차분한 존댓말을 유지했다." },
+			    "empathyAcknowledgement": { "score": 3, "reason": "짧은 사과로 불편을 인정했다." },
+			    "boundarySetting": { "score": 3, "reason": "거절할 요구가 아직 없는 인사였다." }
+			  }
 			}""";
+
+	/** Swagger 예시 — 턴 점수(채점됨) */
+	public static final String SCORE_EXAMPLE = """
+			{
+			  "turnNumber": 1,
+			  "status": "SCORED",
+			  "emotionalStability": { "score": 4, "reason": "도발에도 차분한 존댓말을 유지했다." },
+			  "empathyAcknowledgement": { "score": 3, "reason": "짧은 사과로 불편을 인정했다." },
+			  "boundarySetting": { "score": 3, "reason": "거절할 요구가 아직 없는 인사였다." }
+			}""";
+
+	/** Swagger 예시 — 턴 점수(채점 실패 = 정보 없음) */
+	public static final String SCORE_FAILED_EXAMPLE = """
+			{ "turnNumber": 2, "status": "FAILED", "emotionalStability": null, "empathyAcknowledgement": null, "boundarySetting": null }""";
 
 	private final TrainingSessionService trainingSessionService;
 	/** 받을 수 있는 오디오 최대 크기(바이트) — 음성 서비스 상한과 맞춘다 */
@@ -130,6 +153,8 @@ public class TrainingSessionController {
 
 					**응답 처리**
 					- `complainantAudio`(Base64 WAV)를 디코딩해 바로 재생하고, `complainantLine`을 역할명과 함께 표시한다.
+					- `score`로 태도 3축을 갱신한다. `status`가 `PENDING`이면 채점이 아직 안 끝난 것이므로 점수 조회 API를 잠시 뒤(예: 1초 간격) 다시 부른다.
+					  `FAILED`면 세 축 모두 "채점되지 않음" — 마지막 성공값을 유지하고 표시만 한다. 세 축을 합산하지 않는다.
 					  ```js
 					  const audio = new Audio(`data:${res.complainantAudioContentType};base64,${res.complainantAudio}`);
 					  audio.play();
@@ -182,6 +207,40 @@ public class TrainingSessionController {
 			HttpServletRequest request) throws IOException {
 		byte[] audio = readAudio(request);
 		return trainingSessionService.submitTurn(loginUser.getUserId(), sessionId, audio, request.getContentType());
+	}
+
+	/** 턴 점수 조회 */
+	@Operation(summary = "턴 점수 조회",
+			description = """
+					발화 턴의 태도 3축 점수를 돌려준다. 채점은 턴 응답보다 늦게 끝날 수 있다 —
+					턴 제출 응답의 `score.status`가 `PENDING`이면 이 API를 잠시 뒤 다시 불러 갱신한다.
+
+					- `SCORED`: 세 축 모두 1~5 점수와 짧은 근거
+					- `FAILED`: 채점 실패 — 세 축 모두 `null`(**0점이 아니라 정보 없음**)
+					- 세 축을 합산한 종합 점수는 없다.""",
+			security = @SecurityRequirement(name = OpenApiConfig.SESSION_COOKIE_SCHEME))
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "조회 성공",
+					content = @Content(schema = @Schema(implementation = TurnScoreResponse.class),
+							examples = {
+									@ExampleObject(name = "채점됨", value = SCORE_EXAMPLE),
+									@ExampleObject(name = "정보 없음", value = SCORE_FAILED_EXAMPLE)
+							})),
+			@ApiResponse(responseCode = "401", description = "로그인 필요(UNAUTHORIZED)",
+					content = @Content(schema = @Schema(implementation = ErrorResponse.class),
+							examples = @ExampleObject(name = "UNAUTHORIZED", value = ErrorExamples.UNAUTHORIZED))),
+			@ApiResponse(responseCode = "404", description = "없거나 남의 세션(TRAINING_SESSION_NOT_FOUND) · 없는 턴(TURN_NOT_FOUND)",
+					content = @Content(schema = @Schema(implementation = ErrorResponse.class),
+							examples = {
+									@ExampleObject(name = "TRAINING_SESSION_NOT_FOUND", value = ErrorExamples.TRAINING_SESSION_NOT_FOUND),
+									@ExampleObject(name = "TURN_NOT_FOUND", value = ErrorExamples.TURN_NOT_FOUND)
+							}))
+	})
+	@GetMapping("/{sessionId}/turns/{turnNumber}/score")
+	public TurnScoreResponse getTurnScore(@AuthenticationPrincipal LoginUser loginUser,
+			@Parameter(description = "세션 식별자", example = "1") @PathVariable Long sessionId,
+			@Parameter(description = "턴 번호", example = "1") @PathVariable int turnNumber) {
+		return trainingSessionService.getTurnScore(loginUser.getUserId(), sessionId, turnNumber);
 	}
 
 	/**

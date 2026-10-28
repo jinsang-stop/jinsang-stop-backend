@@ -38,6 +38,10 @@ public final class ErrorExamples {
 	public static final String TRAINING_SESSION_NOT_FOUND = """
 			{ "status": 404, "code": "TRAINING_SESSION_NOT_FOUND", "message": "훈련 세션을 찾을 수 없습니다." }""";
 
+	/** 404 — 턴 없음 */
+	public static final String TURN_NOT_FOUND = """
+			{ "status": 404, "code": "TURN_NOT_FOUND", "message": "발화 턴을 찾을 수 없습니다." }""";
+
 	/** 409 — 끝난 세션 */
 	public static final String TRAINING_SESSION_NOT_IN_PROGRESS = """
 			{ "status": 409, "code": "TRAINING_SESSION_NOT_IN_PROGRESS", "message": "이미 끝난 훈련 세션입니다." }""";

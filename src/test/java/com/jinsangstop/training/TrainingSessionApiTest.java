@@ -4,6 +4,7 @@ import com.jinsangstop.support.MutableClock;
 import com.jinsangstop.support.TestDataCleaner;
 import com.jinsangstop.inference.InferenceClient;
 import com.jinsangstop.inference.InferenceServiceException;
+import com.jinsangstop.scoring.AttitudeScorer;
 import com.jinsangstop.voice.VoiceClient;
 import com.jinsangstop.voice.VoiceServiceException;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,6 +40,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -87,6 +89,13 @@ class TrainingSessionApiTest {
 
 	/** 출력 검사를 통과하는 평범한 민원인 응답 */
 	private static final String OK_REPLY = "{\"대사\": \"영수증이 없으면 어떡하라는 거예요?\", \"진정함\": false}";
+	/** 유효한 채점 응답 */
+	private static final String SCORE_JSON = """
+			{"정서안정": {"점수": 4, "근거": "차분한 말투를 유지했다."},
+			 "공감인정": {"점수": 5, "근거": "불편을 구체적으로 인정했다."},
+			 "경계설정": {"점수": 2, "근거": "안 되는 것을 말하지 않았다."}}""";
+	/** 채점 호출이 돌려줄 응답 — null이면 예외를 던진다 */
+	private String scoreJson;
 	/** 합성 음성 대신 쓸 바이트 */
 	private static final byte[] SPEECH = "RIFF-fake-wav".getBytes();
 
@@ -96,7 +105,8 @@ class TrainingSessionApiTest {
 		clock.reset(START);
 		when(voiceClient.isReady()).thenReturn(true);
 		when(inferenceClient.isReady()).thenReturn(true);
-		when(inferenceClient.complete(any())).thenReturn(OK_REPLY);
+		scoreJson = SCORE_JSON;
+		stubActing(OK_REPLY);
 		when(voiceClient.synthesize(anyString())).thenReturn(SPEECH);
 		when(voiceClient.transcribe(any(), anyString())).thenReturn("죄송합니다 손님");
 	}
@@ -390,8 +400,10 @@ class TrainingSessionApiTest {
 		submitTurn(user, sessionId, AUDIO).andExpect(status().isCreated());
 
 		ArgumentCaptor<InferenceClient.ChatRequest> captor = ArgumentCaptor.forClass(InferenceClient.ChatRequest.class);
-		verify(inferenceClient, org.mockito.Mockito.times(2)).complete(captor.capture());
-		InferenceClient.ChatRequest second = captor.getAllValues().get(1);
+		verify(inferenceClient, org.mockito.Mockito.atLeast(2)).complete(captor.capture());
+		List<InferenceClient.ChatRequest> acting = captor.getAllValues().stream().filter(r -> r.slot() == 0).toList();
+		assertThat(acting).hasSize(2);
+		InferenceClient.ChatRequest second = acting.get(1);
 		assertThat(second.slot()).isZero();
 		assertThat(second.temperature()).isGreaterThan(0);
 		assertThat(second.schema()).isNotNull();
@@ -411,7 +423,7 @@ class TrainingSessionApiTest {
 	void retryAfterForbiddenLine() throws Exception {
 		MockHttpSession user = signup("trainee01");
 		long sessionId = sessionId(startSession(user, 1, 1));
-		when(inferenceClient.complete(any())).thenReturn(
+		stubActing(
 				"{\"대사\": \"한 번만 더 그러면 죽여버린다\", \"진정함\": false}", OK_REPLY);
 
 		submitTurn(user, sessionId, AUDIO)
@@ -426,7 +438,7 @@ class TrainingSessionApiTest {
 	void systemErrorAfterRetry() throws Exception {
 		MockHttpSession user = signup("trainee01");
 		long sessionId = sessionId(startSession(user, 1, 1));
-		when(inferenceClient.complete(any())).thenReturn(
+		stubActing(
 				"{\"대사\": \"죽 여 버 린 다\", \"진정함\": false}",
 				"{\"대사\": \"你好，请给我退款\", \"진정함\": false}");
 
@@ -447,7 +459,7 @@ class TrainingSessionApiTest {
 	void malformedReplyRetries() throws Exception {
 		MockHttpSession user = signup("trainee01");
 		long sessionId = sessionId(startSession(user, 1, 1));
-		when(inferenceClient.complete(any())).thenReturn("{\"대사\": \"},{\"", OK_REPLY);
+		stubActing("{\"대사\": \"},{\"", OK_REPLY);
 
 		submitTurn(user, sessionId, AUDIO).andExpect(status().isCreated());
 	}
@@ -457,7 +469,7 @@ class TrainingSessionApiTest {
 	void roleConfusionRetries() throws Exception {
 		MockHttpSession user = signup("trainee01");
 		long sessionId = sessionId(startSession(user, 1, 1));
-		when(inferenceClient.complete(any())).thenReturn("{\"대사\": \"직원: 죄송합니다 손님\", \"진정함\": false}", OK_REPLY);
+		stubActing("{\"대사\": \"직원: 죄송합니다 손님\", \"진정함\": false}", OK_REPLY);
 
 		submitTurn(user, sessionId, AUDIO)
 				.andExpect(status().isCreated())
@@ -470,7 +482,7 @@ class TrainingSessionApiTest {
 	void inferenceFailureDuringTurn() throws Exception {
 		MockHttpSession user = signup("trainee01");
 		long sessionId = sessionId(startSession(user, 1, 1));
-		when(inferenceClient.complete(any())).thenThrow(new InferenceServiceException("timeout"));
+		org.mockito.Mockito.doThrow(new InferenceServiceException("timeout")).when(inferenceClient).complete(any());
 
 		submitTurn(user, sessionId, AUDIO)
 				.andExpect(status().isServiceUnavailable())
@@ -499,7 +511,7 @@ class TrainingSessionApiTest {
 	void complainantLineStored() throws Exception {
 		MockHttpSession user = signup("trainee01");
 		long sessionId = sessionId(startSession(user, 1, 1));
-		when(inferenceClient.complete(any())).thenReturn("{\"대사\": \"알겠어요, 고객센터로 접수할게요.\", \"진정함\": true}");
+		stubActing("{\"대사\": \"알겠어요, 고객센터로 접수할게요.\", \"진정함\": true}");
 
 		submitTurn(user, sessionId, AUDIO)
 				.andExpect(status().isCreated())
@@ -509,7 +521,134 @@ class TrainingSessionApiTest {
 				.containsEntry("calmed", true);
 	}
 
+	// ── 태도 3축 채점(#5) ─────────────────────────────────
+
+	@Test
+	@DisplayName("턴 응답에 세 축 점수와 근거가 실리고 합산 점수는 없다")
+	void turnResponseHasScoresWithoutTotal() throws Exception {
+		MockHttpSession user = signup("trainee01");
+		long sessionId = sessionId(startSession(user, 1, 1));
+
+		String body = submitTurn(user, sessionId, AUDIO)
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.score.turnNumber").value(1))
+				.andExpect(jsonPath("$.score.status").value("SCORED"))
+				.andExpect(jsonPath("$.score.emotionalStability.score").value(4))
+				.andExpect(jsonPath("$.score.emotionalStability.reason").value("차분한 말투를 유지했다."))
+				.andExpect(jsonPath("$.score.empathyAcknowledgement.score").value(5))
+				.andExpect(jsonPath("$.score.boundarySetting.score").value(2))
+				.andReturn().getResponse().getContentAsString();
+
+		assertThat(body.toLowerCase()).doesNotContain("total", "sum", "overall", "합산", "종합");
+		assertThat(jdbcTemplate.queryForMap(
+				"SELECT score_status, emotional_stability_score, empathy_acknowledgement_score, boundary_setting_score FROM utterance_turn WHERE session_id = ?",
+				sessionId))
+				.containsEntry("score_status", "SCORED")
+				.containsEntry("emotional_stability_score", 4)
+				.containsEntry("empathy_acknowledgement_score", 5)
+				.containsEntry("boundary_setting_score", 2);
+	}
+
+	@Test
+	@DisplayName("채점 호출은 슬롯 1·temperature 0·고정 시드이고, 카드의 숨은 조건과 이번 민원인 대사를 모른다")
+	void scoringRequestShape() throws Exception {
+		MockHttpSession user = signup("trainee01");
+		long sessionId = sessionId(startSession(user, 1, 1));
+		when(voiceClient.transcribe(any(), anyString())).thenReturn("어서 오세요", "영수증 있으세요?");
+
+		submitTurn(user, sessionId, AUDIO).andExpect(status().isCreated());
+		submitTurn(user, sessionId, AUDIO).andExpect(status().isCreated());
+
+		ArgumentCaptor<InferenceClient.ChatRequest> captor = ArgumentCaptor.forClass(InferenceClient.ChatRequest.class);
+		verify(inferenceClient, org.mockito.Mockito.atLeast(4)).complete(captor.capture());
+		List<InferenceClient.ChatRequest> scoring = captor.getAllValues().stream().filter(r -> r.slot() == 1).toList();
+		assertThat(scoring).hasSize(2);
+		assertThat(scoring).allSatisfy(r -> {
+			assertThat(r.temperature()).isZero();
+			assertThat(r.seed()).isEqualTo(42);
+			String all = r.messages().stream().map(InferenceClient.Message::content).reduce("", String::concat);
+			assertThat(all).doesNotContain("구매 내역(영수증 또는 카드 결제 조회)을 확인하지 않고", "확인 가능한 대안을 분명하게 제시하면 진정한다");
+		});
+		// 첫 턴은 직전 민원인 말이 없고, 둘째 턴은 첫 턴의 민원인 대사를 맥락으로 받는다
+		assertThat(scoring.get(0).messages().getLast().content()).contains("대화 시작", "어서 오세요");
+		assertThat(scoring.get(1).messages().getLast().content()).contains("영수증이 없으면 어떡하라는 거예요?", "영수증 있으세요?");
+	}
+
+	@Test
+	@DisplayName("채점 응답이 범위를 벗어나면 0점이 아니라 정보 없음(FAILED, NULL)으로 저장된다")
+	void invalidScoreStoredAsUnknown() throws Exception {
+		MockHttpSession user = signup("trainee01");
+		long sessionId = sessionId(startSession(user, 1, 1));
+		scoreJson = SCORE_JSON.replace("\"점수\": 4", "\"점수\": 7");
+
+		submitTurn(user, sessionId, AUDIO)
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.score.status").value("FAILED"))
+				.andExpect(jsonPath("$.score.emotionalStability").doesNotExist())
+				.andExpect(jsonPath("$.score.boundarySetting").doesNotExist());
+
+		var row = jdbcTemplate.queryForMap(
+				"SELECT score_status, emotional_stability_score, empathy_acknowledgement_score, boundary_setting_score FROM utterance_turn WHERE session_id = ?",
+				sessionId);
+		assertThat(row.get("score_status")).isEqualTo("FAILED");
+		assertThat(row.get("emotional_stability_score")).isNull();
+		assertThat(row.get("empathy_acknowledgement_score")).isNull();
+		assertThat(row.get("boundary_setting_score")).isNull();
+	}
+
+	@Test
+	@DisplayName("채점 호출이 실패해도 턴은 진행되고 점수는 정보 없음이다")
+	void scoringFailureDoesNotBlockTurn() throws Exception {
+		MockHttpSession user = signup("trainee01");
+		long sessionId = sessionId(startSession(user, 1, 1));
+		scoreJson = null; // 채점 호출이 예외를 던지게 한다
+
+		submitTurn(user, sessionId, AUDIO)
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.turnNumber").value(1))
+				.andExpect(jsonPath("$.score.status").value("FAILED"));
+	}
+
+	@Test
+	@DisplayName("점수 조회 API — 본인 턴은 200, 없는 턴은 404 TURN_NOT_FOUND, 남의 세션은 404")
+	void getTurnScore() throws Exception {
+		MockHttpSession user = signup("trainee01");
+		long sessionId = sessionId(startSession(user, 1, 1));
+		submitTurn(user, sessionId, AUDIO).andExpect(status().isCreated());
+
+		mockMvc.perform(get("/api/training-sessions/" + sessionId + "/turns/1/score").session(user))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("SCORED"))
+				.andExpect(jsonPath("$.empathyAcknowledgement.score").value(5));
+		mockMvc.perform(get("/api/training-sessions/" + sessionId + "/turns/9/score").session(user))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("TURN_NOT_FOUND"));
+		mockMvc.perform(get("/api/training-sessions/" + sessionId + "/turns/1/score").session(signup("trainee02")))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("TRAINING_SESSION_NOT_FOUND"));
+	}
+
 	// ── 도우미 ───────────────────────────────────────────
+
+	/**
+	 * 추론 서비스 모의 응답을 슬롯으로 나눈다 — 슬롯 1(채점)은 scoreJson, 슬롯 0(연기)은 replies를 차례로(마지막 값 반복).
+	 * 연기와 채점이 병렬로 불리므로 호출 순서에 기대지 않게 하기 위함이다.
+	 */
+	private void stubActing(String... replies) {
+		java.util.concurrent.atomic.AtomicInteger next = new java.util.concurrent.atomic.AtomicInteger();
+		// when(...)은 기존 응답을 null 인자로 한 번 실행하므로 doAnswer로 건다
+		org.mockito.Mockito.doAnswer(invocation -> {
+			InferenceClient.ChatRequest request = invocation.getArgument(0);
+			if (request.slot() == AttitudeScorer.SCORING_SLOT) {
+				if (scoreJson == null) {
+					throw new InferenceServiceException("채점 호출 실패(모의)");
+				}
+				return scoreJson;
+			}
+			int index = next.getAndIncrement();
+			return replies[Math.min(index, replies.length - 1)];
+		}).when(inferenceClient).complete(any());
+	}
 
 	/** 가입(=로그인)하고 세션을 돌려준다. */
 	private MockHttpSession signup(String loginId) throws Exception {

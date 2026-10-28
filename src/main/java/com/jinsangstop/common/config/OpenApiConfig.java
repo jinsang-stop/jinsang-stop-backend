@@ -62,6 +62,7 @@ public class OpenApiConfig {
 			| 2 | 마이크 권한 | 브라우저 `getUserMedia` | — |
 			| 3 | 말하기 → "말하기 끝내기" | `POST /api/training-sessions/{sessionId}/turns` (본문 = 녹음 Blob) | `422 EMPTY_TRANSCRIPT`·`AUDIO_UNREADABLE` 다시 말하기 |
 			| 4 | 응답 표시 | `userTranscript`(내 말) · `complainantLine`(역할명과 함께) 표시, `complainantAudio` 재생 | `500 SESSION_ENDED_BY_SYSTEM_ERROR` 종료 안내 |
+			| 5 | 태도 3축 갱신 | 응답의 `score`. `PENDING`이면 `GET /api/training-sessions/{sessionId}/turns/{n}/score`를 잠시 뒤 다시 | `FAILED`면 "채점되지 않음"(마지막 성공값 유지) |
 
 			음성·추론 서비스는 브라우저에서 직접 부르지 않는다. 사용자 오디오와 민원인 합성 음성은 서버에 저장되지 않는다.
 
@@ -80,6 +81,7 @@ public class OpenApiConfig {
 			| `DUPLICATE_LOGIN_ID` | 409 | 가입 시 이미 쓰는 아이디 |
 			| `TRAINING_SESSION_BUSY` | 409 | 다른 훈련이 진행 중 — 대기 안내 |
 			| `TRAINING_SESSION_NOT_FOUND` | 404 | 없거나 남의 세션 |
+			| `TURN_NOT_FOUND` | 404 | 세션에 그 번호의 턴이 없음 |
 			| `TRAINING_SESSION_NOT_IN_PROGRESS` | 409 | 이미 끝난 세션에 턴 제출 |
 			| `EMPTY_TRANSCRIPT` | 422 | 말소리가 없음 — 턴 미소모, 다시 말하기 |
 			| `AUDIO_UNREADABLE` | 422 | 녹음을 읽지 못함 — 다시 말하기 |
@@ -93,6 +95,7 @@ public class OpenApiConfig {
 			## 꼭 지킬 것
 			- 카드 응답에는 진정 조건·양보 불가선이 **없다**. 프론트 타입에도 두지 않는다 — 사용자가 정답을 보고 연기하게 되기 때문이다.
 			- 상대역은 화면에 `complainantRoleName`(손님 등)으로 표시한다. 코드에서는 언제나 `민원인`(complainant)이다.
+			- 태도 3축(정서 안정·공감 인정·경계 설정, 각 1~5)을 **합산한 종합 점수를 만들지 않는다.** 채점 실패는 0점이 아니라 "채점되지 않음"이다.
 			- 화면 문구에 "정답 대응", "매뉴얼", "올바른 조치"를 쓰지 않는다. 이 서비스는 조치의 옳고 그름을 판정하지 않는다.
 
 			## 로컬 연동
@@ -117,6 +120,6 @@ public class OpenApiConfig {
 						new Tag().name(TAG_AUTH).description("회원가입·로그인·로그아웃·현재 사용자 — 세션 쿠키 방식"),
 						new Tag().name(TAG_INTENSITY).description("강도 선택 화면 — 기본값, 단계별로 민원인이 할 수 있는 행동, 고지 확인 필요 여부"),
 						new Tag().name(TAG_CARD).description("공식 카드 목록·상세 화면 — 진정 조건·양보 불가선은 내려가지 않는다"),
-						new Tag().name(TAG_TRAINING).description("훈련 세션 시작·발화 턴 제출 — 로그인 필요")));
+						new Tag().name(TAG_TRAINING).description("훈련 세션 시작·발화 턴 제출·턴 점수 — 로그인 필요")));
 	}
 }
