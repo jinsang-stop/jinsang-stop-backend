@@ -2,11 +2,14 @@ package com.jinsangstop.scoring;
 
 import com.jinsangstop.common.config.AsyncConfig;
 import com.jinsangstop.inference.InferenceClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.stereotype.Component;
 
 /**
@@ -15,6 +18,8 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class ScoringWarmup {
+
+	private static final Logger log = LoggerFactory.getLogger(ScoringWarmup.class);
 
 	private final AttitudeScorer attitudeScorer;
 	private final InferenceClient inferenceClient;
@@ -36,10 +41,15 @@ public class ScoringWarmup {
 		if (!enabled) {
 			return;
 		}
-		turnExecutor.execute(() -> {
-			if (inferenceClient.isReady()) {
-				attitudeScorer.warmup();
-			}
-		});
+		try {
+			turnExecutor.execute(() -> {
+				if (inferenceClient.isReady()) {
+					attitudeScorer.warmup();
+				}
+			});
+		} catch (TaskRejectedException e) {
+			// 예열은 성능 최적화일 뿐 — 실패해도 기동을 막지 않는다
+			log.warn("채점 루브릭 캐시 예열을 실행기에 올리지 못했다(무시): {}", e.getMessage());
+		}
 	}
 }

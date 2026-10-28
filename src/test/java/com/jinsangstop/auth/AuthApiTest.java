@@ -110,6 +110,26 @@ class AuthApiTest {
 	}
 
 	@Test
+	@DisplayName("BCrypt 한도(72바이트)를 넘는 비밀번호는 500이 아니라 400과 안내 메시지")
+	void passwordOverBcryptLimit() throws Exception {
+		// 한글 25자 = 75바이트 — 글자 수(64자 이하)는 통과하지만 BCrypt가 받지 못한다
+		mockMvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
+						.content("{\"loginId\":\"trainee01\",\"password\":\"" + "가".repeat(25) + "\",\"displayName\":\"김알바\"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+				.andExpect(jsonPath("$.message").value("비밀번호가 너무 깁니다. 한글은 24자, 영문·숫자는 64자 이내로 입력해 주세요."));
+
+		// 한글 24자 = 72바이트는 가입되고 그 비밀번호로 로그인된다
+		String password = "가".repeat(24);
+		mockMvc.perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON)
+						.content("{\"loginId\":\"trainee01\",\"password\":\"" + password + "\",\"displayName\":\"김알바\"}"))
+				.andExpect(status().isCreated());
+		mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+						.content("{\"loginId\":\"trainee01\",\"password\":\"" + password + "\"}"))
+				.andExpect(status().isOk());
+	}
+
+	@Test
 	@DisplayName("깨진 JSON 본문은 400 INVALID_REQUEST")
 	void malformedJson() throws Exception {
 		mockMvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON).content("{"))

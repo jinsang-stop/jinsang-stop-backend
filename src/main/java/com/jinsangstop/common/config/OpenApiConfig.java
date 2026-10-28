@@ -88,6 +88,7 @@ public class OpenApiConfig {
 			| `TURN_NOT_FOUND` | 404 | 세션에 그 번호의 턴이 없음 |
 			| `TRAINING_SESSION_IN_PROGRESS` | 409 | 진행 중인 세션의 리포트 요청 |
 			| `TRAINING_SESSION_NOT_IN_PROGRESS` | 409 | 이미 끝난 세션에 턴 제출 |
+			| `TURN_ALREADY_IN_PROGRESS` | 409 | 같은 세션의 이전 턴을 처리 중 — 버튼을 두 번 누른 경우. 무시해도 된다 |
 			| `EMPTY_TRANSCRIPT` | 422 | 말소리가 없음 — 턴 미소모, 다시 말하기 |
 			| `AUDIO_UNREADABLE` | 422 | 녹음을 읽지 못함 — 다시 말하기 |
 			| `AUDIO_TOO_LARGE` | 413 | 녹음이 너무 김 |
