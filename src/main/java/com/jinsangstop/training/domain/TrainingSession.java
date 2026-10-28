@@ -65,6 +65,10 @@ public class TrainingSession {
 	@Column(name = "ended_at")
 	private LocalDateTime endedAt;
 
+	/** 소요 턴 수 — 진정 종료일 때만 기록한다(ADR-0004) */
+	@Column(name = "turns_to_calm")
+	private Integer turnsToCalm;
+
 	/** 민원인 연기 호출 시드 — 세션마다 기록해 대화를 재현할 수 있게 한다(ADR-0009) */
 	@Column(name = "acting_seed")
 	private Long actingSeed;
@@ -105,6 +109,30 @@ public class TrainingSession {
 		this.turnCount += 1;
 		this.lastActivityAt = now;
 		return turnCount;
+	}
+
+	/**
+	 * 턴을 확정한 직후 종료 여부를 판정한다.
+	 * 진정했으면 진정 종료(소요 턴 수 = 이번 턴 번호), 아니면 하드 턴 상한에 닿았는지 본다.
+	 *
+	 * @return 이번 판정으로 세션이 끝났는지
+	 */
+	public boolean judgeEnd(boolean calmed, int hardTurnLimit, LocalDateTime now) {
+		if (calmed) {
+			this.turnsToCalm = turnCount;
+			end(TrainingSessionStatus.CALMED, now);
+			return true;
+		}
+		if (turnCount >= hardTurnLimit) {
+			end(TrainingSessionStatus.TURN_LIMIT_REACHED, now);
+			return true;
+		}
+		return false;
+	}
+
+	/** 사용자가 중단한다. */
+	public void abort(LocalDateTime now) {
+		end(TrainingSessionStatus.ABORTED, now);
 	}
 
 	/** 방치된 세션을 정리한다 — 진행 중 자리를 비운다. */
@@ -158,6 +186,10 @@ public class TrainingSession {
 
 	public LocalDateTime getEndedAt() {
 		return endedAt;
+	}
+
+	public Integer getTurnsToCalm() {
+		return turnsToCalm;
 	}
 
 	public Long getActingSeed() {
