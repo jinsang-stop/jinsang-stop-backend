@@ -8,8 +8,10 @@ import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -43,6 +45,18 @@ public class GlobalExceptionHandler {
 				.orElse(ErrorCode.INVALID_REQUEST.message());
 		return ResponseEntity.status(ErrorCode.INVALID_REQUEST.status())
 				.body(ErrorResponse.of(ErrorCode.INVALID_REQUEST, message));
+	}
+
+	/** 쿼리 파라미터·경로 변수 검증 실패(@Min 등) */
+	@ExceptionHandler(HandlerMethodValidationException.class)
+	public ResponseEntity<ErrorResponse> handleMethodValidation(HandlerMethodValidationException e) {
+		return toResponse(ErrorCode.INVALID_REQUEST);
+	}
+
+	/** 필수 쿼리 파라미터 누락 */
+	@ExceptionHandler(MissingServletRequestParameterException.class)
+	public ResponseEntity<ErrorResponse> handleMissingParameter(MissingServletRequestParameterException e) {
+		return toResponse(ErrorCode.INVALID_REQUEST);
 	}
 
 	/** 요청 본문이 비었거나 JSON 형식이 깨짐 */

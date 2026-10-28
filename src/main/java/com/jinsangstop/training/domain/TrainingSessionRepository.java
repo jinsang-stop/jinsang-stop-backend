@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -18,6 +19,10 @@ public interface TrainingSessionRepository extends JpaRepository<TrainingSession
 
 	/** 사용자 본인의 세션만 가져온다 — 남의 세션은 없는 것처럼 다룬다. */
 	Optional<TrainingSession> findByIdAndUserId(Long id, Long userId);
+
+	/** 성장 기록 후보 — 같은 사용자·카드·강도·상태의 세션을 종료 시각 순으로 */
+	List<TrainingSession> findAllByUserIdAndCardIdAndIntensityAndStatusOrderByEndedAtAsc(
+			Long userId, Long cardId, int intensity, TrainingSessionStatus status);
 
 	/** 사용자의 특정 상태 세션 — 진행 중 세션은 시연 장비 전체에서 하나뿐이므로 많아야 하나다. */
 	Optional<TrainingSession> findByUserIdAndStatus(Long userId, TrainingSessionStatus status);
