@@ -10,6 +10,7 @@ import com.jinsangstop.training.dto.StartTrainingSessionRequest;
 import com.jinsangstop.training.dto.TrainingSessionResponse;
 import com.jinsangstop.training.dto.UtteranceTurnResponse;
 import com.jinsangstop.training.service.TrainingSessionService;
+import com.jinsangstop.training.service.TurnSubmissionGuard;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -69,12 +70,15 @@ public class TrainingSessionController {
 			}""";
 
 	private final TrainingSessionService trainingSessionService;
+	private final TurnSubmissionGuard turnSubmissionGuard;
 	/** 받을 수 있는 오디오 최대 크기(바이트) — 음성 서비스 상한과 맞춘다 */
 	private final long maxAudioBytes;
 
 	public TrainingSessionController(TrainingSessionService trainingSessionService,
+			TurnSubmissionGuard turnSubmissionGuard,
 			@Value("${jinsangstop.training.max-audio-bytes}") long maxAudioBytes) {
 		this.trainingSessionService = trainingSessionService;
+		this.turnSubmissionGuard = turnSubmissionGuard;
 		this.maxAudioBytes = maxAudioBytes;
 	}
 
@@ -153,9 +157,12 @@ public class TrainingSessionController {
 			@ApiResponse(responseCode = "404", description = "없거나 남의 세션(TRAINING_SESSION_NOT_FOUND)",
 					content = @Content(schema = @Schema(implementation = ErrorResponse.class),
 							examples = @ExampleObject(name = "TRAINING_SESSION_NOT_FOUND", value = ErrorExamples.TRAINING_SESSION_NOT_FOUND))),
-			@ApiResponse(responseCode = "409", description = "이미 끝난 세션(TRAINING_SESSION_NOT_IN_PROGRESS)",
+			@ApiResponse(responseCode = "409", description = "이미 끝난 세션(TRAINING_SESSION_NOT_IN_PROGRESS) · 같은 세션의 이전 턴 처리 중(TURN_ALREADY_IN_PROGRESS)",
 					content = @Content(schema = @Schema(implementation = ErrorResponse.class),
-							examples = @ExampleObject(name = "TRAINING_SESSION_NOT_IN_PROGRESS", value = ErrorExamples.TRAINING_SESSION_NOT_IN_PROGRESS))),
+							examples = {
+									@ExampleObject(name = "TRAINING_SESSION_NOT_IN_PROGRESS", value = ErrorExamples.TRAINING_SESSION_NOT_IN_PROGRESS),
+									@ExampleObject(name = "TURN_ALREADY_IN_PROGRESS", value = ErrorExamples.TURN_ALREADY_IN_PROGRESS)
+							})),
 			@ApiResponse(responseCode = "413", description = "오디오 크기 초과(AUDIO_TOO_LARGE)",
 					content = @Content(schema = @Schema(implementation = ErrorResponse.class),
 							examples = @ExampleObject(name = "AUDIO_TOO_LARGE", value = ErrorExamples.AUDIO_TOO_LARGE))),
@@ -180,8 +187,16 @@ public class TrainingSessionController {
 	public UtteranceTurnResponse submitTurn(@AuthenticationPrincipal LoginUser loginUser,
 			@Parameter(description = "세션 식별자 — 세션 시작 응답의 sessionId", example = "1") @PathVariable Long sessionId,
 			HttpServletRequest request) throws IOException {
-		byte[] audio = readAudio(request);
-		return trainingSessionService.submitTurn(loginUser.getUserId(), sessionId, audio, request.getContentType());
+		// 같은 세션의 턴이 처리 중이면 두 번째 요청은 거절한다(버튼 두 번 누름 등)
+		if (!turnSubmissionGuard.tryAcquire(sessionId)) {
+			throw new BusinessException(ErrorCode.TURN_ALREADY_IN_PROGRESS);
+		}
+		try {
+			byte[] audio = readAudio(request);
+			return trainingSessionService.submitTurn(loginUser.getUserId(), sessionId, audio, request.getContentType());
+		} finally {
+			turnSubmissionGuard.release(sessionId);
+		}
 	}
 
 	/**

@@ -78,6 +78,7 @@ class OpenApiExampleTest {
 				.andExpect(jsonPath("$.paths['/api/training-sessions/{sessionId}/turns'].post.requestBody.content['audio/webm']").exists())
 				.andExpect(jsonPath("$.paths['/api/training-sessions/{sessionId}/turns'].post.responses['422'].content['application/json'].examples.EMPTY_TRANSCRIPT").exists())
 				.andExpect(jsonPath("$.components.securitySchemes.sessionCookie.in").value("cookie"))
+				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.passwordWithinBcryptLimit").doesNotExist())
 				.andExpect(jsonPath("$.paths['/api/auth/me'].get.security[0].sessionCookie").exists())
 				.andExpect(jsonPath("$.paths['/api/cards/{cardId}'].get.responses['404'].content['application/json'].examples.CARD_NOT_FOUND").exists())
 				.andExpect(jsonPath("$.paths['/api/intensities'].get.responses['200'].content['application/json'].examples").exists());
