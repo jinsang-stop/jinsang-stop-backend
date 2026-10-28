@@ -84,6 +84,7 @@ class OpenApiExampleTest {
 				.andExpect(jsonPath("$.components.schemas.TrainingSessionResponse.properties.endedAt.example").doesNotExist())
 				.andExpect(jsonPath("$.components.schemas.UtteranceTurnResponse.properties.turnsToCalm.example").doesNotExist())
 				.andExpect(jsonPath("$.paths['/api/auth/me'].get.security[0].sessionCookie").exists())
+				.andExpect(jsonPath("$.paths['/api/training-sessions/current'].get.responses['204']").exists())
 				.andExpect(jsonPath("$.paths['/api/cards/{cardId}'].get.responses['404'].content['application/json'].examples.CARD_NOT_FOUND").exists())
 				.andExpect(jsonPath("$.paths['/api/intensities'].get.responses['200'].content['application/json'].examples").exists());
 	}
