@@ -18,6 +18,13 @@ spring:
 
 server:
   port: ${SERVER_PORT:8080}
+  # 로그인 세션(ADR-0010) — 서버 메모리 세션, HttpOnly + SameSite=Lax 쿠키
+  servlet:
+    session:
+      timeout: ${SESSION_TIMEOUT:1d}
+      cookie:
+        http-only: true
+        same-site: lax
 
 # 프론트엔드 개발 서버 주소. 여러 개면 쉼표로 구분한다.
 jinsangstop:

@@ -9,6 +9,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -67,11 +68,18 @@ class ScenarioCardApiTest {
 	}
 
 	@Test
-	@DisplayName("매핑되지 않은 경로는 404 NOT_FOUND")
+	@DisplayName("로그인한 상태에서 매핑되지 않은 경로는 404 NOT_FOUND")
 	void unknownPath() throws Exception {
-		mockMvc.perform(get("/api/unknown"))
+		mockMvc.perform(get("/api/unknown").with(user("tester")))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.code").value("NOT_FOUND"));
+	}
+
+	@Test
+	@DisplayName("카드 조회는 로그인 없이 된다")
+	void cardsArePublic() throws Exception {
+		mockMvc.perform(get("/api/cards")).andExpect(status().isOk());
+		mockMvc.perform(get("/api/intensities")).andExpect(status().isOk());
 	}
 
 	@Test
