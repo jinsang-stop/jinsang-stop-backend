@@ -1,0 +1,31 @@
+# 「진상 멈춰」 백엔드 기본 설정
+# 주소·계정은 환경변수로 주입한다. 기본값은 compose.yaml의 로컬 개발용 MySQL에 맞춰 두었다.
+spring:
+  application:
+    name: jinsang-stop-backend
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/jinsangstop?serverTimezone=Asia/Seoul&characterEncoding=UTF-8}
+    username: ${DB_USERNAME:jinsangstop}
+    password: ${DB_PASSWORD:jinsangstop-local}
+  jpa:
+    # 스키마는 Flyway가 만든다. JPA는 엔티티와 테이블이 맞는지 검증만 한다.
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: ${SERVER_PORT:8080}
+
+# 프론트엔드 개발 서버 주소. 여러 개면 쉼표로 구분한다.
+jinsangstop:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui
+  api-docs:
+    path: /v3/api-docs
