@@ -19,6 +19,9 @@ public interface TrainingSessionRepository extends JpaRepository<TrainingSession
 	/** 사용자 본인의 세션만 가져온다 — 남의 세션은 없는 것처럼 다룬다. */
 	Optional<TrainingSession> findByIdAndUserId(Long id, Long userId);
 
+	/** 사용자의 특정 상태 세션 — 진행 중 세션은 시연 장비 전체에서 하나뿐이므로 많아야 하나다. */
+	Optional<TrainingSession> findByUserIdAndStatus(Long userId, TrainingSessionStatus status);
+
 	/** 턴 번호를 매기기 위해 세션 행을 잠그고 가져온다 — 같은 세션에 턴이 동시에 들어와도 번호가 겹치지 않는다. */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select s from TrainingSession s where s.id = :id")

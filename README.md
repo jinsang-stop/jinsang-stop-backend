@@ -86,6 +86,7 @@ MySQL 없이 H2로 돈다.
 | `POST /api/training-sessions` | `훈련 세션` 시작 `{cardId, intensity}` | 필요 |
 | `POST /api/training-sessions/{sessionId}/turns` | `발화 턴` 제출 — 본문 = 오디오 바이트(`audio/*`). 응답에 `민원인` 대사·합성 음성(Base64 WAV)·진정 여부·`태도 3축` 점수 | 필요 |
 | `GET /api/training-sessions/{sessionId}/turns/{turnNumber}/score` | 턴 점수 — 채점이 턴 응답보다 늦을 때 다시 받는다 | 필요 |
+| `GET /api/training-sessions/current` | 내 진행 중 세션 — 없으면 204. 세션 식별자를 잃었을 때 이어 하기·중단 | 필요 |
 | `GET /api/training-sessions/{sessionId}` | 세션 상태·종료 사유 — 새로고침 뒤 복원 | 필요 |
 | `POST /api/training-sessions/{sessionId}/abort` | 사용자 중단 — 즉시 종료 | 필요 |
 | `GET /api/training-sessions/{sessionId}/report` | 세션 리포트 — 턴 타임라인·종료 사유·성장 기록 미편입 사유 | 필요 |

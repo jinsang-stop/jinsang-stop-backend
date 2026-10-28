@@ -299,6 +299,15 @@ public class TrainingSessionService {
 		return TrainingSessionResponse.of(session, cardOf(session));
 	}
 
+	/**
+	 * 내 진행 중 세션 — 브라우저를 닫아 세션 식별자를 잃어도 이어 하거나 중단할 수 있게 한다.
+	 * 진행 중 세션이 없으면 빈 값.
+	 */
+	public Optional<TrainingSessionResponse> findCurrent(Long userId) {
+		return trainingSessionRepository.findByUserIdAndStatus(userId, TrainingSessionStatus.IN_PROGRESS)
+				.map(session -> TrainingSessionResponse.of(session, cardOf(session)));
+	}
+
 	private ScenarioCard cardOf(TrainingSession session) {
 		return scenarioCardRepository.findById(session.getCardId())
 				.orElseThrow(() -> new BusinessException(ErrorCode.CARD_NOT_FOUND));

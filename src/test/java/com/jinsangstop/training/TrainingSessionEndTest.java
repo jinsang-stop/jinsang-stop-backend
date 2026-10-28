@@ -253,6 +253,55 @@ class TrainingSessionEndTest {
 				.andExpect(status().isNotFound());
 	}
 
+	@Test
+	@DisplayName("내 진행 중 세션 — 있으면 200, 없거나 끝났으면 204")
+	void currentSession() throws Exception {
+		MockHttpSession user = signup("end01");
+		mockMvc.perform(get("/api/training-sessions/current").session(user))
+				.andExpect(status().isNoContent());
+
+		long sessionId = start(user, 1);
+		mockMvc.perform(get("/api/training-sessions/current").session(user))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.sessionId").value(sessionId))
+				.andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+				.andExpect(jsonPath("$.calmingCondition").doesNotExist());
+
+		mockMvc.perform(post("/api/training-sessions/" + sessionId + "/abort").session(user)).andExpect(status().isOk());
+		mockMvc.perform(get("/api/training-sessions/current").session(user))
+				.andExpect(status().isNoContent());
+	}
+
+	@Test
+	@DisplayName("시작이 BUSY일 때 current로 내 세션인지 남의 세션인지 가린다")
+	void currentDistinguishesOwnBusy() throws Exception {
+		MockHttpSession owner = signup("end01");
+		long sessionId = start(owner, 1);
+		MockHttpSession other = signup("end02");
+
+		// 둘 다 시작은 409
+		for (MockHttpSession user : new MockHttpSession[]{owner, other}) {
+			mockMvc.perform(post("/api/training-sessions").session(user)
+							.contentType(MediaType.APPLICATION_JSON).content("{\"cardId\":1,\"intensity\":1}"))
+					.andExpect(status().isConflict())
+					.andExpect(jsonPath("$.code").value("TRAINING_SESSION_BUSY"));
+		}
+		// 주인은 200(내 세션), 다른 사람은 204(남이 훈련 중)
+		mockMvc.perform(get("/api/training-sessions/current").session(owner))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.sessionId").value(sessionId));
+		mockMvc.perform(get("/api/training-sessions/current").session(other))
+				.andExpect(status().isNoContent());
+	}
+
+	@Test
+	@DisplayName("내 진행 중 세션 조회도 로그인이 필요하다")
+	void currentRequiresLogin() throws Exception {
+		mockMvc.perform(get("/api/training-sessions/current"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+	}
+
 	// ── 도우미 ───────────────────────────────────────────
 
 	private MockHttpSession signup(String loginId) throws Exception {
