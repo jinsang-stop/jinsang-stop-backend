@@ -70,6 +70,7 @@ MySQL 없이 H2로 돈다.
 | `SCORING_MODE` | 채점 호출 시점 `PARALLEL` / `SEQUENTIAL` | `PARALLEL` |
 | `SCORING_RESPONSE_WAIT` | 턴 응답에 점수를 싣기 위해 더 기다리는 시간 | `1s` |
 | `SCORING_WARMUP_ENABLED` | 기동 시 루브릭 캐시 예열 | `true` |
+| `GROWTH_BOUNDARY_THRESHOLD` | 성장 기록 편입 경계 설정 하한선(1~5). 비우면 편입 보류 | (비어 있음) |
 
 ## API 요약
 
@@ -87,6 +88,7 @@ MySQL 없이 H2로 돈다.
 | `GET /api/training-sessions/{sessionId}/turns/{turnNumber}/score` | 턴 점수 — 채점이 턴 응답보다 늦을 때 다시 받는다 | 필요 |
 | `GET /api/training-sessions/{sessionId}` | 세션 상태·종료 사유 — 새로고침 뒤 복원 | 필요 |
 | `POST /api/training-sessions/{sessionId}/abort` | 사용자 중단 — 즉시 종료 | 필요 |
+| `GET /api/training-sessions/{sessionId}/report` | 세션 리포트 — 턴 타임라인·종료 사유·성장 기록 미편입 사유 | 필요 |
 
 카드 응답에는 진정 조건과 양보 불가선이 **필드 자체로 없다**. DB에만 있고 `민원인` 연기 프롬프트 조립에만 쓴다.
 
@@ -157,6 +159,15 @@ JINSANGSTOP_RUN_INFERENCE_IT=1 ./gradlew test --tests "*ScoringIntegrationTest"
 - 중단하면 처리 중이던 턴은 저장 단계에서 세션이 끝난 것을 보고 버려진다(그 턴 요청은 409).
 - 채점이 종료 뒤에 끝나도 점수는 저장한다(리포트에 쓰인다).
 
+### 리포트 · 성장 기록 편입 판정
+
+- 편입 판정은 `GrowthEligibility` **하나**로 한다. 리포트와 성장 기록 조회가 같은 판정을 쓴다.
+- 편입 조건: `진정 종료` AND 모든 턴 `SCORED` AND 경계 설정 **평균** ≥ 하한선(`GROWTH_BOUNDARY_THRESHOLD`, 1~5).
+- 하한선이 비어 있으면(기본값) 모든 세션이 `BOUNDARY_THRESHOLD_UNSET`(편입 보류)다. 수치는 파일럿 데이터로 정한다 — 코드에 박지 않는다.
+- 미편입 사유는 여러 개가 함께 붙는다: `NOT_CALMED` · `UNSCORED_TURNS` · `BOUNDARY_BELOW_THRESHOLD` · `BOUNDARY_THRESHOLD_UNSET`. 각 사유에 사용자 표시용 문구가 있다.
+- 리포트에는 축별 평균(보조 지표)만 있고 합산 점수는 없다. 진정 조건·양보 불가선도 없다.
+- 리포트·판정은 저장하지 않고 조회할 때마다 계산한다. 하한선을 정하면 지난 세션에도 바로 반영된다.
+
 ### 오류 응답 형식
 
 모든 API가 같은 형식을 쓴다. 프론트엔드는 `code`로 분기하고 `message`를 그대로 띄운다.
@@ -178,6 +189,7 @@ JINSANGSTOP_RUN_INFERENCE_IT=1 ./gradlew test --tests "*ScoringIntegrationTest"
 | `TRAINING_SESSION_BUSY` | 409 | 다른 훈련이 진행 중 |
 | `TRAINING_SESSION_NOT_FOUND` | 404 | 없거나 남의 세션 |
 | `TURN_NOT_FOUND` | 404 | 세션에 그 번호의 턴이 없음 |
+| `TRAINING_SESSION_IN_PROGRESS` | 409 | 진행 중인 세션의 리포트 요청 |
 | `TRAINING_SESSION_NOT_IN_PROGRESS` | 409 | 이미 끝난 세션에 턴 제출 |
 | `EMPTY_TRANSCRIPT` | 422 | 전사가 비었음 — 턴 미소모 |
 | `AUDIO_UNREADABLE` | 422 | 음성 서비스가 오디오를 읽지 못함 |
@@ -210,6 +222,7 @@ JINSANGSTOP_RUN_INFERENCE_IT=1 ./gradlew test --tests "*ScoringIntegrationTest"
 | 발화 턴 | `UtteranceTurn` | `utterance_turn` |
 | 진정 종료 · 진정시키지 못한 채 종료 · 사용자 중단 · 시스템 오류로 중단 | `TrainingSessionStatus.CALMED` · `TURN_LIMIT_REACHED` · `ABORTED` · `SYSTEM_ERROR` | `training_session.status` |
 | 소요 턴 수 | `turnsToCalm` | `training_session.turns_to_calm` |
+| 성장 기록 편입 판정 · 미편입 사유 | `GrowthEligibility` · `ExclusionReason` | — (조회 시 계산) |
 | 음성 서비스 | `VoiceClient` / `HttpVoiceClient` | — |
 | 추론 서비스 | `InferenceClient` / `HttpInferenceClient` | — |
 | 출력 검사 | `OutputChecker` (금칙 목록 `AbsoluteLineList`) | — |
@@ -229,7 +242,9 @@ com.jinsangstop
 │   └── error       ErrorCode · ErrorResponse · 전역 예외 처리
 ├── card            시나리오 카드 (domain · dto · service · controller)
 ├── intensity       강도 (domain · dto · controller)
+├── report          세션 리포트
 ├── complainant     민원인 연기 프롬프트 조립 · 출력 검사(safety)
+├── growth          성장 기록 편입 판정
 ├── inference       추론 서비스 HTTP 클라이언트
 ├── scoring         태도 3축 채점 루브릭 · 채점기
 ├── training        훈련 세션 · 발화 턴 (domain · dto · service · controller)
