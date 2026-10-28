@@ -3,6 +3,8 @@ package com.jinsangstop.common.error;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -30,9 +32,20 @@ public class GlobalExceptionHandler {
 		return toResponse(ErrorCode.INVALID_REQUEST);
 	}
 
-	/** 요청 본문 검증(@Valid) 실패 */
+	/** 요청 본문 검증(@Valid) 실패 — 첫 번째 위반 항목의 메시지를 사용자에게 보여준다. */
 	@ExceptionHandler(MethodArgumentNotValidException.class)
 	public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException e) {
+		String message = e.getBindingResult().getFieldErrors().stream()
+				.findFirst()
+				.map(FieldError::getDefaultMessage)
+				.orElse(ErrorCode.INVALID_REQUEST.message());
+		return ResponseEntity.status(ErrorCode.INVALID_REQUEST.status())
+				.body(ErrorResponse.of(ErrorCode.INVALID_REQUEST, message));
+	}
+
+	/** 요청 본문이 비었거나 JSON 형식이 깨짐 */
+	@ExceptionHandler(HttpMessageNotReadableException.class)
+	public ResponseEntity<ErrorResponse> handleNotReadable(HttpMessageNotReadableException e) {
 		return toResponse(ErrorCode.INVALID_REQUEST);
 	}
 

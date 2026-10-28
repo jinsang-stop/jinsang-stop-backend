@@ -10,8 +10,14 @@ public enum ErrorCode {
 
 	/** 요청 형식이 잘못됨(경로 변수 타입 불일치, 검증 실패 등) */
 	INVALID_REQUEST(HttpStatus.BAD_REQUEST, "요청 형식이 올바르지 않습니다."),
+	/** 로그인하지 않은 상태로 보호된 API를 호출함 */
+	UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다."),
+	/** 아이디 또는 비밀번호 불일치 — 어느 쪽이 틀렸는지는 알려주지 않는다 */
+	LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다."),
 	/** 존재하지 않는 경로 */
 	NOT_FOUND(HttpStatus.NOT_FOUND, "요청한 주소를 찾을 수 없습니다."),
+	/** 회원가입 시 이미 쓰이는 아이디 */
+	DUPLICATE_LOGIN_ID(HttpStatus.CONFLICT, "이미 사용 중인 아이디입니다."),
 	/** 해당 식별자의 공식 카드가 없음 */
 	CARD_NOT_FOUND(HttpStatus.NOT_FOUND, "시나리오 카드를 찾을 수 없습니다."),
 	/** 처리하지 못한 서버 내부 오류 */

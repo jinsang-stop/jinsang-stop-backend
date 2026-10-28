@@ -33,7 +33,7 @@ PC에 MySQL·MariaDB 서비스가 깔려 있어 3306을 이미 쓰고 있으면 
 ./gradlew bootRun
 ```
 
-처음 뜰 때 Flyway가 `scenario_card` 테이블을 만들고 샘플 `공식 카드` 2장을 넣는다.
+처음 뜰 때 Flyway가 `scenario_card`·`user_account` 테이블을 만들고 샘플 `공식 카드` 2장을 넣는다.
 
 - API 문서: http://localhost:8080/swagger-ui
 - OpenAPI JSON: http://localhost:8080/v3/api-docs
@@ -56,16 +56,30 @@ MySQL 없이 H2로 돈다.
 | `DB_USERNAME` / `DB_PASSWORD` | DB 계정 | 로컬 개발용 값 |
 | `SERVER_PORT` | 서버 포트 | `8080` |
 | `CORS_ALLOWED_ORIGINS` | 허용할 프론트 출처(쉼표 구분) | `http://localhost:5173` |
+| `SESSION_TIMEOUT` | 로그인 세션 유지 시간 | `1d` |
 
 ## API 요약
 
-| 메서드 · 경로 | 내용 |
-|---|---|
-| `GET /api/cards` | `공식 카드` 목록 |
-| `GET /api/cards/{cardId}` | `공식 카드` 상세 |
-| `GET /api/intensities` | `강도` 기본값 · 공통 안내 · 단계별 허용 행동 · 고지 확인 필요 여부 |
+| 메서드 · 경로 | 내용 | 로그인 |
+|---|---|---|
+| `POST /api/auth/signup` | 회원가입 — 가입과 동시에 로그인 | 불필요 |
+| `POST /api/auth/login` | 로그인 — `Set-Cookie: JSESSIONID` | 불필요 |
+| `POST /api/auth/logout` | 로그아웃 — 세션·쿠키 삭제 | 불필요 |
+| `GET /api/auth/me` | 현재 사용자 | 필요 |
+| `GET /api/cards` | `공식 카드` 목록 | 불필요 |
+| `GET /api/cards/{cardId}` | `공식 카드` 상세 | 불필요 |
+| `GET /api/intensities` | `강도` 기본값 · 공통 안내 · 단계별 허용 행동 · 고지 확인 필요 여부 | 불필요 |
 
 카드 응답에는 진정 조건과 양보 불가선이 **필드 자체로 없다**. DB에만 있고 `민원인` 연기 프롬프트 조립에만 쓴다.
+
+### 인증
+
+자체 아이디·비밀번호 + 서버 세션 쿠키다([ADR-0010](https://github.com/jinsang-stop/jinsang-stop/blob/main/docs/adr/0010-id-password-session-cookie-auth.md)).
+
+- 로그인하면 `JSESSIONID` 쿠키(HttpOnly, SameSite=Lax)가 내려간다. 프론트는 요청마다 `credentials: 'include'`만 켜면 된다.
+- 위 표에서 "불필요"로 적힌 API를 뺀 나머지는 전부 로그인이 필요하다. 로그인 없이 부르면 `401 UNAUTHORIZED`.
+- 비밀번호는 BCrypt 해시로만 저장한다. 세션은 서버 메모리에 있어 서버를 재시작하면 다시 로그인해야 한다.
+- 컨트롤러에서 현재 사용자는 `@AuthenticationPrincipal LoginUser loginUser`로 받는다(`loginUser.getUserId()`).
 
 ### 오류 응답 형식
 
@@ -77,9 +91,12 @@ MySQL 없이 H2로 돈다.
 
 | `code` | 상태 | 언제 |
 |---|---|---|
-| `INVALID_REQUEST` | 400 | 경로 변수 타입 불일치, 본문 검증 실패 |
+| `INVALID_REQUEST` | 400 | 본문 검증 실패(무엇이 틀렸는지 `message`에 담김), 경로 변수 타입 불일치, 깨진 JSON |
+| `UNAUTHORIZED` | 401 | 로그인 없이 보호된 API 호출 |
+| `LOGIN_FAILED` | 401 | 아이디 또는 비밀번호 불일치 |
 | `NOT_FOUND` | 404 | 없는 경로 |
 | `CARD_NOT_FOUND` | 404 | 없는 카드 |
+| `DUPLICATE_LOGIN_ID` | 409 | 이미 쓰는 아이디로 가입 |
 | `INTERNAL_ERROR` | 500 | 처리하지 못한 오류 |
 
 새 오류는 `common/error/ErrorCode`에 추가한다.
@@ -101,6 +118,7 @@ MySQL 없이 H2로 돈다.
 | 진정 조건 | `calmingCondition` | `calming_condition` |
 | 하드 턴 상한 | `hardTurnLimit` | `hard_turn_limit` |
 | 강도 | `Intensity` (`LEVEL_1`~`LEVEL_3`) | — |
+| 사용자 계정 | `UserAccount` (세션 안에서는 `LoginUser`) | `user_account` |
 
 이후 슬라이스에서 쓸 이름도 같은 규칙을 따른다 — `훈련 세션` `TrainingSession`, `발화 턴` `UtteranceTurn`,
 `태도 3축` `AttitudeScore`(정서 안정 `emotionalStability` · 공감 인정 `empathyAcknowledgement` · 경계 설정 `boundarySetting`),
@@ -111,8 +129,9 @@ MySQL 없이 H2로 돈다.
 
 ```
 com.jinsangstop
+├── auth            회원가입·로그인·현재 사용자 (domain · dto · security · service · controller)
 ├── common
-│   ├── config      CORS · OpenAPI
+│   ├── config      CORS · OpenAPI · Security
 │   └── error       ErrorCode · ErrorResponse · 전역 예외 처리
 ├── card            시나리오 카드 (domain · dto · service · controller)
 └── intensity       강도 (domain · dto · controller)

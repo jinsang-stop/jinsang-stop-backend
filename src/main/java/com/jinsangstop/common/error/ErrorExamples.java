@@ -10,6 +10,22 @@ public final class ErrorExamples {
 	public static final String INVALID_REQUEST = """
 			{ "status": 400, "code": "INVALID_REQUEST", "message": "요청 형식이 올바르지 않습니다." }""";
 
+	/** 400 — 입력 검증 실패(첫 번째 위반 항목의 메시지) */
+	public static final String INVALID_SIGNUP = """
+			{ "status": 400, "code": "INVALID_REQUEST", "message": "아이디는 영문 소문자·숫자·밑줄(_) 4~20자입니다." }""";
+
+	/** 401 — 로그인 필요 */
+	public static final String UNAUTHORIZED = """
+			{ "status": 401, "code": "UNAUTHORIZED", "message": "로그인이 필요합니다." }""";
+
+	/** 401 — 아이디·비밀번호 불일치 */
+	public static final String LOGIN_FAILED = """
+			{ "status": 401, "code": "LOGIN_FAILED", "message": "아이디 또는 비밀번호가 올바르지 않습니다." }""";
+
+	/** 409 — 아이디 중복 */
+	public static final String DUPLICATE_LOGIN_ID = """
+			{ "status": 409, "code": "DUPLICATE_LOGIN_ID", "message": "이미 사용 중인 아이디입니다." }""";
+
 	/** 404 — 카드 없음 */
 	public static final String CARD_NOT_FOUND = """
 			{ "status": 404, "code": "CARD_NOT_FOUND", "message": "시나리오 카드를 찾을 수 없습니다." }""";

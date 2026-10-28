@@ -70,9 +70,13 @@ class OpenApiExampleTest {
 	void apiDocsContainGuide() throws Exception {
 		mockMvc.perform(get("/v3/api-docs"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.info.description").value(containsString("프론트엔드 연동 순서")))
-				.andExpect(jsonPath("$.tags[0].name").value("1. 강도"))
-				.andExpect(jsonPath("$.tags[1].name").value("2. 시나리오 카드"))
+				.andExpect(jsonPath("$.info.description").value(containsString("인증 — 세션 쿠키")))
+				.andExpect(jsonPath("$.tags[0].name").value("1. 인증"))
+				.andExpect(jsonPath("$.tags[1].name").value("2. 강도"))
+				.andExpect(jsonPath("$.tags[2].name").value("3. 시나리오 카드"))
+				.andExpect(jsonPath("$.components.securitySchemes.sessionCookie.in").value("cookie"))
+				.andExpect(jsonPath("$.components.schemas.SignupRequest.properties.passwordWithinBcryptLimit").doesNotExist())
+				.andExpect(jsonPath("$.paths['/api/auth/me'].get.security[0].sessionCookie").exists())
 				.andExpect(jsonPath("$.paths['/api/cards/{cardId}'].get.responses['404'].content['application/json'].examples.CARD_NOT_FOUND").exists())
 				.andExpect(jsonPath("$.paths['/api/intensities'].get.responses['200'].content['application/json'].examples").exists());
 	}
