@@ -1,13 +1,17 @@
 package com.jinsangstop.training.domain;
 
+import com.jinsangstop.scoring.AttitudeScores;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 /**
  * 발화 턴 — 사용자 발화 하나와 그에 대한 민원인 응답 하나의 쌍(ADR-0001).
@@ -46,6 +50,32 @@ public class UtteranceTurn {
 	@Column(name = "created_at", nullable = false)
 	private LocalDateTime createdAt;
 
+	/** 채점 상태 — 실패하면 FAILED이고 점수는 NULL(정보 없음)이다 */
+	@Enumerated(EnumType.STRING)
+	@Column(name = "score_status", nullable = false, length = 20)
+	private ScoreStatus scoreStatus = ScoreStatus.PENDING;
+
+	/** 정서 안정 점수(1~5) */
+	@Column(name = "emotional_stability_score")
+	private Integer emotionalStabilityScore;
+
+	@Column(name = "emotional_stability_reason", length = 200)
+	private String emotionalStabilityReason;
+
+	/** 공감 인정 점수(1~5) */
+	@Column(name = "empathy_acknowledgement_score")
+	private Integer empathyAcknowledgementScore;
+
+	@Column(name = "empathy_acknowledgement_reason", length = 200)
+	private String empathyAcknowledgementReason;
+
+	/** 경계 설정 점수(1~5) */
+	@Column(name = "boundary_setting_score")
+	private Integer boundarySettingScore;
+
+	@Column(name = "boundary_setting_reason", length = 200)
+	private String boundarySettingReason;
+
 	/** JPA 전용 기본 생성자 */
 	protected UtteranceTurn() {
 	}
@@ -64,6 +94,39 @@ public class UtteranceTurn {
 	public static UtteranceTurn of(Long sessionId, int turnNumber, String userTranscript, String complainantLine,
 			boolean calmed, LocalDateTime createdAt) {
 		return new UtteranceTurn(sessionId, turnNumber, userTranscript, complainantLine, calmed, createdAt);
+	}
+
+	/** 채점 결과를 기록한다. */
+	public void applyScores(AttitudeScores scores) {
+		this.scoreStatus = ScoreStatus.SCORED;
+		this.emotionalStabilityScore = scores.emotionalStability().score();
+		this.emotionalStabilityReason = scores.emotionalStability().reason();
+		this.empathyAcknowledgementScore = scores.empathyAcknowledgement().score();
+		this.empathyAcknowledgementReason = scores.empathyAcknowledgement().reason();
+		this.boundarySettingScore = scores.boundarySetting().score();
+		this.boundarySettingReason = scores.boundarySetting().reason();
+	}
+
+	/** 채점 실패 — 점수는 비워 둔다(0으로 채우지 않는다). */
+	public void markScoringFailed() {
+		this.scoreStatus = ScoreStatus.FAILED;
+		this.emotionalStabilityScore = null;
+		this.emotionalStabilityReason = null;
+		this.empathyAcknowledgementScore = null;
+		this.empathyAcknowledgementReason = null;
+		this.boundarySettingScore = null;
+		this.boundarySettingReason = null;
+	}
+
+	/** 채점 결과(있으면)를 돌려준다. SCORED가 아니면 빈 값 */
+	public Optional<AttitudeScores> scores() {
+		if (scoreStatus != ScoreStatus.SCORED) {
+			return Optional.empty();
+		}
+		return Optional.of(new AttitudeScores(
+				new AttitudeScores.AxisScore(emotionalStabilityScore, emotionalStabilityReason),
+				new AttitudeScores.AxisScore(empathyAcknowledgementScore, empathyAcknowledgementReason),
+				new AttitudeScores.AxisScore(boundarySettingScore, boundarySettingReason)));
 	}
 
 	public Long getId() {
@@ -92,5 +155,9 @@ public class UtteranceTurn {
 
 	public LocalDateTime getCreatedAt() {
 		return createdAt;
+	}
+
+	public ScoreStatus getScoreStatus() {
+		return scoreStatus;
 	}
 }
