@@ -26,6 +26,7 @@ import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -130,6 +131,7 @@ public class TrainingSessionController {
 					고른 카드와 강도로 훈련 세션을 연다.
 
 					- 시연 장비 한 대가 **한 번에 한 세션만** 돌린다. 누군가(본인 포함) 훈련 중이면 `409 TRAINING_SESSION_BUSY` — "잠시 후 다시" 안내를 띄운다.
+					  본인 세션이 남아서인지는 `GET /api/training-sessions/current`로 가린다.
 					  마지막 턴 뒤로 오래(기본 10분) 아무 활동이 없던 세션은 방치된 것으로 보고 정리한 뒤 새 세션을 연다.
 					- 음성 서비스나 추론 서비스가 꺼져 있으면 세션을 만들지 않고 `503 TRAINING_ENVIRONMENT_NOT_READY`.
 					- 2·3단계 강도는 프론트가 고지 확인을 받은 뒤에 보낸다.""",
@@ -242,6 +244,31 @@ public class TrainingSessionController {
 		} finally {
 			turnSubmissionGuard.release(sessionId);
 		}
+	}
+
+	/** 내 진행 중 세션 조회 */
+	@Operation(summary = "내 진행 중 세션 조회",
+			description = """
+					로그인한 사용자의 진행 중 세션을 돌려준다. 없으면 **204(본문 없음)**.
+
+					- 앱 시작·새로고침 때 불러, 있으면 훈련 화면으로 이어 가거나 중단 버튼을 보여 준다.
+					- 세션 시작이 `409 TRAINING_SESSION_BUSY`일 때 이 API로 **본인 세션인지** 가린다 —
+					  200이면 내 세션이 남아 있는 것(이어 하기 또는 `POST .../abort`로 중단 후 새로 시작), 204면 다른 사람이 훈련 중이다.""",
+			security = @SecurityRequirement(name = OpenApiConfig.SESSION_COOKIE_SCHEME))
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "진행 중 세션 있음",
+					content = @Content(schema = @Schema(implementation = TrainingSessionResponse.class),
+							examples = @ExampleObject(name = "진행 중", value = SESSION_EXAMPLE))),
+			@ApiResponse(responseCode = "204", description = "진행 중 세션 없음(본문 없음)", content = @Content),
+			@ApiResponse(responseCode = "401", description = "로그인 필요(UNAUTHORIZED)",
+					content = @Content(schema = @Schema(implementation = ErrorResponse.class),
+							examples = @ExampleObject(name = "UNAUTHORIZED", value = ErrorExamples.UNAUTHORIZED)))
+	})
+	@GetMapping("/current")
+	public ResponseEntity<TrainingSessionResponse> current(@AuthenticationPrincipal LoginUser loginUser) {
+		return trainingSessionService.findCurrent(loginUser.getUserId())
+				.map(ResponseEntity::ok)
+				.orElseGet(() -> ResponseEntity.noContent().build());
 	}
 
 	/** 세션 상태 조회 */

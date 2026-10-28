@@ -60,7 +60,8 @@ public class OpenApiConfig {
 			## 연동 순서 — 훈련 화면 (로그인 필요)
 			| 단계 | 화면 | 호출 | 실패 시 안내 |
 			|---|---|---|---|
-			| 1 | 훈련 시작 | `POST /api/training-sessions` `{cardId, intensity}` | `409 TRAINING_SESSION_BUSY` 대기 안내 · `503 TRAINING_ENVIRONMENT_NOT_READY` 환경 미준비 |
+			| 0 | 앱 시작·새로고침 | `GET /api/training-sessions/current` — 200이면 진행 중 세션으로 이어 가기, 204면 없음 | — |
+			| 1 | 훈련 시작 | `POST /api/training-sessions` `{cardId, intensity}` | `409 TRAINING_SESSION_BUSY` → `current`가 200이면 내 세션(이어 하기·중단), 204면 대기 안내 · `503 TRAINING_ENVIRONMENT_NOT_READY` 환경 미준비 |
 			| 2 | 마이크 권한 | 브라우저 `getUserMedia` | — |
 			| 3 | 말하기 → "말하기 끝내기" | `POST /api/training-sessions/{sessionId}/turns` (본문 = 녹음 Blob) | `422 EMPTY_TRANSCRIPT`·`AUDIO_UNREADABLE` 다시 말하기 |
 			| 4 | 응답 표시 | `userTranscript`(내 말) · `complainantLine`(역할명과 함께) 표시, `complainantAudio` 재생 | `500 SESSION_ENDED_BY_SYSTEM_ERROR` 종료 안내 |
