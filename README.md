@@ -33,7 +33,7 @@ PC에 MySQL·MariaDB 서비스가 깔려 있어 3306을 이미 쓰고 있으면 
 ./gradlew bootRun
 ```
 
-처음 뜰 때 Flyway가 `scenario_card`·`user_account` 테이블을 만들고 샘플 `공식 카드` 2장을 넣는다.
+처음 뜰 때 Flyway가 `scenario_card`·`user_account`·`training_session`·`utterance_turn` 테이블을 만들고 샘플 `공식 카드` 2장을 넣는다.
 
 - API 문서: http://localhost:8080/swagger-ui
 - OpenAPI JSON: http://localhost:8080/v3/api-docs
@@ -57,6 +57,10 @@ MySQL 없이 H2로 돈다.
 | `SERVER_PORT` | 서버 포트 | `8080` |
 | `CORS_ALLOWED_ORIGINS` | 허용할 프론트 출처(쉼표 구분) | `http://localhost:5173` |
 | `SESSION_TIMEOUT` | 로그인 세션 유지 시간 | `1d` |
+| `VOICE_SERVICE_URL` | `음성 서비스` 주소 | `http://127.0.0.1:8000` |
+| `VOICE_CONNECT_TIMEOUT` / `VOICE_HEALTH_TIMEOUT` / `VOICE_TRANSCRIBE_TIMEOUT` | 연결 · 헬스 · 전사 시간 제한 | `2s` / `3s` / `60s` |
+| `TRAINING_IDLE_TIMEOUT` | 방치된 세션으로 보는 시간 | `10m` |
+| `TRAINING_MAX_AUDIO_BYTES` | 발화 턴 오디오 최대 크기 | `26214400`(25MB) |
 
 ## API 요약
 
@@ -69,6 +73,8 @@ MySQL 없이 H2로 돈다.
 | `GET /api/cards` | `공식 카드` 목록 | 불필요 |
 | `GET /api/cards/{cardId}` | `공식 카드` 상세 | 불필요 |
 | `GET /api/intensities` | `강도` 기본값 · 공통 안내 · 단계별 허용 행동 · 고지 확인 필요 여부 | 불필요 |
+| `POST /api/training-sessions` | `훈련 세션` 시작 `{cardId, intensity}` | 필요 |
+| `POST /api/training-sessions/{sessionId}/turns` | `발화 턴` 제출 — 본문 = 오디오 바이트(`audio/*`) | 필요 |
 
 카드 응답에는 진정 조건과 양보 불가선이 **필드 자체로 없다**. DB에만 있고 `민원인` 연기 프롬프트 조립에만 쓴다.
 
@@ -80,6 +86,16 @@ MySQL 없이 H2로 돈다.
 - 위 표에서 "불필요"로 적힌 API를 뺀 나머지는 전부 로그인이 필요하다. 로그인 없이 부르면 `401 UNAUTHORIZED`.
 - 비밀번호는 BCrypt 해시로만 저장한다. 세션은 서버 메모리에 있어 서버를 재시작하면 다시 로그인해야 한다.
 - 컨트롤러에서 현재 사용자는 `@AuthenticationPrincipal LoginUser loginUser`로 받는다(`loginUser.getUserId()`).
+
+### 훈련 세션 · 발화 턴
+
+- 시연 장비 한 대가 **한 번에 한 세션만** 돌린다. 진행 중 세션은 `training_session.active_slot = 1` 하나뿐이고 유니크 제약이 동시 시작을 막는다.
+  마지막 활동 뒤로 `TRAINING_IDLE_TIMEOUT`(기본 10분)이 지난 세션은 방치된 것으로 보고 다음 시작 요청 때 `ABANDONED`로 정리한다.
+- 세션 시작 전에 `음성 서비스` `/health`를 본다. 200이 아니면 세션을 만들지 않고 `503 TRAINING_ENVIRONMENT_NOT_READY`.
+- 턴 제출은 multipart가 아니라 **요청 본문에 오디오 바이트 그대로** 받는다. multipart는 큰 파일을 디스크 임시 파일로 쓰기 때문이다(ADR-0006). `spring.servlet.multipart.enabled=false`.
+- 오디오는 메모리에서만 다루고 음성 서비스로 그대로 넘긴 뒤 버린다. DB에는 전사 텍스트만 남는다.
+- 빈 전사는 `422 EMPTY_TRANSCRIPT`이고 턴 번호·`turn_count`를 소모하지 않는다. `음성 서비스` 422는 `AUDIO_UNREADABLE`(다시 말하기), 503·연결 실패는 `TRAINING_ENVIRONMENT_NOT_READY`(환경 문제)로 바꾼다.
+- 로컬에서 실제 전사까지 확인하려면 `jinsang-stop-voice`를 띄운다(`python -m app.main`, `127.0.0.1:8000`).
 
 ### 오류 응답 형식
 
@@ -97,6 +113,15 @@ MySQL 없이 H2로 돈다.
 | `NOT_FOUND` | 404 | 없는 경로 |
 | `CARD_NOT_FOUND` | 404 | 없는 카드 |
 | `DUPLICATE_LOGIN_ID` | 409 | 이미 쓰는 아이디로 가입 |
+| `METHOD_NOT_ALLOWED` | 405 | 지원하지 않는 HTTP 메서드 |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 | 본문 형식이 맞지 않음(턴 제출은 `audio/*`) |
+| `TRAINING_SESSION_BUSY` | 409 | 다른 훈련이 진행 중 |
+| `TRAINING_SESSION_NOT_FOUND` | 404 | 없거나 남의 세션 |
+| `TRAINING_SESSION_NOT_IN_PROGRESS` | 409 | 이미 끝난 세션에 턴 제출 |
+| `EMPTY_TRANSCRIPT` | 422 | 전사가 비었음 — 턴 미소모 |
+| `AUDIO_UNREADABLE` | 422 | 음성 서비스가 오디오를 읽지 못함 |
+| `AUDIO_TOO_LARGE` | 413 | 오디오가 `TRAINING_MAX_AUDIO_BYTES` 초과 |
+| `TRAINING_ENVIRONMENT_NOT_READY` | 503 | 음성 서비스 미준비·장애 |
 | `INTERNAL_ERROR` | 500 | 처리하지 못한 오류 |
 
 새 오류는 `common/error/ErrorCode`에 추가한다.
@@ -119,10 +144,12 @@ MySQL 없이 H2로 돈다.
 | 하드 턴 상한 | `hardTurnLimit` | `hard_turn_limit` |
 | 강도 | `Intensity` (`LEVEL_1`~`LEVEL_3`) | — |
 | 사용자 계정 | `UserAccount` (세션 안에서는 `LoginUser`) | `user_account` |
+| 훈련 세션 | `TrainingSession` | `training_session` |
+| 발화 턴 | `UtteranceTurn` | `utterance_turn` |
+| 음성 서비스 | `VoiceClient` / `HttpVoiceClient` | — |
 
-이후 슬라이스에서 쓸 이름도 같은 규칙을 따른다 — `훈련 세션` `TrainingSession`, `발화 턴` `UtteranceTurn`,
-`태도 3축` `AttitudeScore`(정서 안정 `emotionalStability` · 공감 인정 `empathyAcknowledgement` · 경계 설정 `boundarySetting`),
-`진정 종료` `CALMED`, `소요 턴 수` `turnsToCalm`, `성장 기록` `GrowthRecord`, `음성 서비스` `VoiceService`,
+이후 슬라이스에서 쓸 이름도 같은 규칙을 따른다 — `태도 3축` `AttitudeScore`(정서 안정 `emotionalStability` · 공감 인정 `empathyAcknowledgement` · 경계 설정 `boundarySetting`),
+`진정 종료` `CALMED`, `소요 턴 수` `turnsToCalm`, `성장 기록` `GrowthRecord`,
 `추론 서비스` `InferenceService`, `출력 검사` `OutputCheck`.
 
 ## 패키지 구조
@@ -134,5 +161,7 @@ com.jinsangstop
 │   ├── config      CORS · OpenAPI · Security
 │   └── error       ErrorCode · ErrorResponse · 전역 예외 처리
 ├── card            시나리오 카드 (domain · dto · service · controller)
-└── intensity       강도 (domain · dto · controller)
+├── intensity       강도 (domain · dto · controller)
+├── training        훈련 세션 · 발화 턴 (domain · dto · service · controller)
+└── voice           음성 서비스 HTTP 클라이언트
 ```
