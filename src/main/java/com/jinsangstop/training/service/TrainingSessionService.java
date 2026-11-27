@@ -83,9 +83,9 @@ public class TrainingSessionService {
 
 	/** 채점 호출 시점(PRD v2 "채점 · 종료 · 강도 규칙") */
 	public enum ScoringMode {
-		/** 연기와 동시에 — 기본값 */
+		/** 연기와 동시에 — PRD-v2의 원래 기본값. 시연 장비에서는 연기 생성을 늦춘다 */
 		PARALLEL,
-		/** 연기 응답 직후 — 연기 지연이 목표를 넘을 때 쓰는 전환 경로 */
+		/** 연기 응답 직후 — 연기 지연이 목표를 넘을 때 쓰는 전환 경로. 시연 장비 실측에 따라 현재 기본값 */
 		SEQUENTIAL
 	}
 
