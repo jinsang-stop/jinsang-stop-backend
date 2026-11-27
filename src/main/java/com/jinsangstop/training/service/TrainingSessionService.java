@@ -83,9 +83,9 @@ public class TrainingSessionService {
 
 	/** 채점 호출 시점(PRD v2 "채점 · 종료 · 강도 규칙") */
 	public enum ScoringMode {
-		/** 연기와 동시에 — 기본값 */
+		/** 연기와 동시에 — PRD-v2의 원래 기본값. 시연 장비에서는 연기 생성을 늦춘다 */
 		PARALLEL,
-		/** 연기 응답 직후 — 연기 지연이 목표를 넘을 때 쓰는 전환 경로 */
+		/** 연기 응답 직후 — 연기 지연이 목표를 넘을 때 쓰는 전환 경로. 시연 장비 실측에 따라 현재 기본값 */
 		SEQUENTIAL
 	}
 
@@ -150,7 +150,7 @@ public class TrainingSessionService {
 		if (warmupEnabled) {
 			// 사용자가 첫 마디를 하는 동안 슬롯 0에 카드·강도 프롬프트를 올려 둔다(ADR-0009)
 			try {
-				turnExecutor.execute(() -> complainantActor.warmup(card, intensity, actingSeed));
+				turnExecutor.execute(() -> complainantActor.warmup(card, intensity));
 			} catch (TaskRejectedException e) {
 				// 세션은 이미 만들어졌다 — 예열은 성능 최적화일 뿐이므로 실패해도 시작을 막지 않는다
 				log.warn("연기 프롬프트 캐시 예열을 실행기에 올리지 못했다(무시): {}", e.getMessage());

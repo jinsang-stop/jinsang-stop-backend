@@ -67,8 +67,8 @@ MySQL 없이 H2로 돈다.
 | `ACTING_WARMUP_ENABLED` | 세션 시작 시 연기 프롬프트 캐시 예열 | `true` |
 | `ABSOLUTE_LINES_DOCUMENT` | 절대선 문서 위치 | `classpath:safety/absolute-lines.txt` |
 | `SCORING_SEED` / `SCORING_MAX_TOKENS` | 채점 고정 시드 · 최대 토큰 | `42` / `300` |
-| `SCORING_MODE` | 채점 호출 시점 `PARALLEL` / `SEQUENTIAL` | `PARALLEL` |
-| `SCORING_RESPONSE_WAIT` | 턴 응답에 점수를 싣기 위해 더 기다리는 시간 | `1s` |
+| `SCORING_MODE` | 채점 호출 시점 `PARALLEL` / `SEQUENTIAL` | `SEQUENTIAL` |
+| `SCORING_RESPONSE_WAIT` | 턴 응답에 점수를 싣기 위해 더 기다리는 시간 | `0s` |
 | `SCORING_WARMUP_ENABLED` | 기동 시 루브릭 캐시 예열 | `true` |
 | `GROWTH_BOUNDARY_THRESHOLD` | 성장 기록 편입 경계 설정 하한선(1~5). 비우면 편입 보류 | (비어 있음) |
 
@@ -135,9 +135,14 @@ JINSANGSTOP_RUN_INFERENCE_IT=1 ./gradlew test --tests "*IntensityCapIntegrationT
 - 루브릭은 `ScoringPromptAssembler.RUBRIC`. 직무 조치의 옳고 그름은 채점하지 않는다고 명시하고, 회피·침묵은 정서 안정 가점 없음, 과잉 사과·요구 수용은 공감 인정 아님, 공감 없는 단호한 거절도 경계 설정 가점이라고 적었다.
 - 채점은 직전 `민원인` 대사와 이번 직원 발화만 본다 — 이번 턴의 `민원인` 대사, 카드의 진정 조건·양보 불가선은 모른다.
 - 호출은 슬롯 1, temperature 0, 고정 시드(`SCORING_SEED`), JSON 스키마. 응답 범위·필수 값은 `AttitudeScorer`가 다시 검증하고, 하나라도 어기거나 호출이 실패하면 `FAILED` — 점수는 NULL(정보 없음)이지 0이 아니다.
-- 기본은 연기와 **병렬**(`SCORING_MODE=PARALLEL`). `SEQUENTIAL`이면 연기 응답 직후 시작해 합성 구간과 겹친다.
-- 합성이 끝난 뒤 `SCORING_RESPONSE_WAIT`(기본 1초)까지 기다려 끝나면 턴 응답에 싣고, 아니면 `PENDING`으로 응답한 뒤 끝나는 대로 저장한다. 프론트는 점수 조회 API로 다시 받는다.
-- 서버가 뜨면 루브릭을 슬롯 1에 캐시 예열한다(`SCORING_WARMUP_ENABLED`).
+- 기본은 **순차**(`SCORING_MODE=SEQUENTIAL`) — 연기 응답 직후 시작해 합성 구간과 겹친다. `PARALLEL`이면 연기와 동시에 시작한다.
+  시연 장비에서 병렬은 연기 생성을 48→34.5 tok/s로 늦춰서(2026-11-27 실측) PRD-v2의 전환 경로대로 순차를 기본으로 두었다.
+- 합성이 끝난 뒤 `SCORING_RESPONSE_WAIT`(기본 0초)까지 기다려 끝나면 턴 응답에 싣고, 아니면 `PENDING`으로 응답한 뒤 끝나는 대로 저장한다. 프론트는 점수 조회 API로 다시 받는다.
+  채점은 대개 합성보다 늦게 끝나므로 기다려도 `PENDING`이 되기 쉽고, 기다린 시간은 그대로 턴 지연에 더해진다.
+- 서버가 뜨면 루브릭을 슬롯 1에 캐시 예열한다(`SCORING_WARMUP_ENABLED`). 연기 프롬프트는 세션 시작 때 슬롯 0에 예열한다.
+- **예열은 실제 요청의 정확한 접두사만 올린다**(`InferenceClient.warmup`). 시스템 메시지만 채팅 API로 보내면 생성 프롬프트(`<|im_start|>assistant`)까지 캐시되는데,
+  Qwen3.6-35B-A3B는 그 앞까지 되감는 것이 체크포인트에 달려 있어 첫 턴에 프롬프트 전체를 다시 처리하는 경우가 있었다(연기 7.8초).
+  `/apply-template`로 렌더한 접두사를 `/completion`(생성 0토큰)으로 보내면 첫 턴은 직원 발화 부분(수십 토큰)만 처리한다.
 - **저장 발화 채점 테스트**(재현성 → 축 독립성 → 직무 조치 비채점): 실제 `추론 서비스`를 띄우고 아래를 돌린다. 발화 묶음은 `src/test/resources/scoring/saved-utterances.txt`, 결과는 `build/reports/scoring.md`.
 
 ```bash

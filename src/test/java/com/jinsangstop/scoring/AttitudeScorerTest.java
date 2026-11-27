@@ -35,6 +35,10 @@ class AttitudeScorerTest {
 			}
 			return reply.get();
 		}
+
+		@Override
+		public void warmup(java.util.List<Message> prefix, int slot) {
+		}
 	};
 	private final AttitudeScorer scorer = new AttitudeScorer(fake, new ScoringPromptAssembler(),
 			JsonMapper.builder().build(), 42, 300);
