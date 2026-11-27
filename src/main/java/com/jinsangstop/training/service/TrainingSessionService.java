@@ -150,7 +150,7 @@ public class TrainingSessionService {
 		if (warmupEnabled) {
 			// 사용자가 첫 마디를 하는 동안 슬롯 0에 카드·강도 프롬프트를 올려 둔다(ADR-0009)
 			try {
-				turnExecutor.execute(() -> complainantActor.warmup(card, intensity, actingSeed));
+				turnExecutor.execute(() -> complainantActor.warmup(card, intensity));
 			} catch (TaskRejectedException e) {
 				// 세션은 이미 만들어졌다 — 예열은 성능 최적화일 뿐이므로 실패해도 시작을 막지 않는다
 				log.warn("연기 프롬프트 캐시 예열을 실행기에 올리지 못했다(무시): {}", e.getMessage());

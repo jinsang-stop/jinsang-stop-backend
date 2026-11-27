@@ -86,11 +86,13 @@ public class ComplainantActor {
 		throw new OutputRejectedException(lastReason);
 	}
 
-	/** 캐시 예열 — 시스템 프롬프트를 슬롯 0에 미리 올려 첫 턴 지연을 줄인다. 실패해도 무시한다 */
-	public void warmup(ScenarioCard card, Intensity intensity, long sessionSeed) {
+	/**
+	 * 캐시 예열 — 첫 턴 프롬프트의 앞부분(시스템 프롬프트 + 직원 발화 표지 직전)을 슬롯 0에 미리 올려 첫 턴 지연을 줄인다.
+	 * 실패해도 무시한다.
+	 */
+	public void warmup(ScenarioCard card, Intensity intensity) {
 		try {
-			inferenceClient.complete(new ChatRequest(promptAssembler.warmup(card, intensity), ACTING_SLOT,
-					temperature, sessionSeed, 1, null, null));
+			inferenceClient.warmup(promptAssembler.warmup(card, intensity), ACTING_SLOT);
 		} catch (RuntimeException e) {
 			log.warn("연기 프롬프트 캐시 예열 실패(무시): {}", e.getMessage());
 		}

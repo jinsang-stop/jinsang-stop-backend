@@ -35,6 +35,8 @@ class HttpInferenceClientTest {
 	private String completionBody;
 	private int healthStatus;
 	private final AtomicReference<String> receivedBody = new AtomicReference<>();
+	private final AtomicReference<String> warmupBody = new AtomicReference<>();
+	private int warmupStatus = 200;
 
 	@BeforeEach
 	void startServer() throws IOException {
@@ -43,6 +45,21 @@ class HttpInferenceClientTest {
 		server.createContext("/v1/chat/completions", exchange -> {
 			receivedBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
 			respond(exchange, completionStatus, completionBody);
+		});
+		// 가짜 채팅 템플릿 — 메시지를 Qwen 형식으로 이어 붙이고 생성 프롬프트를 덧붙인다
+		server.createContext("/apply-template", exchange -> {
+			JsonNode request = jsonMapper.readTree(exchange.getRequestBody().readAllBytes());
+			StringBuilder prompt = new StringBuilder();
+			for (JsonNode message : request.get("messages")) {
+				prompt.append("<|im_start|>").append(message.get("role").asString()).append('\n')
+						.append(message.get("content").asString()).append("<|im_end|>\n");
+			}
+			prompt.append("<|im_start|>assistant\n");
+			respond(exchange, 200, jsonMapper.writeValueAsString(Map.of("prompt", prompt.toString())));
+		});
+		server.createContext("/completion", exchange -> {
+			warmupBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+			respond(exchange, warmupStatus, "{\"content\":\"\"}");
 		});
 		server.start();
 		client = clientFor("http://127.0.0.1:" + server.getAddress().getPort());
@@ -85,6 +102,39 @@ class HttpInferenceClientTest {
 		client.complete(new ChatRequest(List.of(Message.system("시스템")), 0, 0.8, 7, 1, null, null));
 
 		assertThat(jsonMapper.readTree(receivedBody.get()).has("response_format")).isFalse();
+	}
+
+	@Test
+	@DisplayName("예열은 실제 요청의 정확한 접두사(사용자 메시지 내용 직전까지)를 생성 0토큰으로 슬롯에 올린다")
+	void warmupSendsExactPrefix() {
+		client.warmup(List.of(Message.system("카드 프롬프트")), 0);
+
+		JsonNode body = jsonMapper.readTree(warmupBody.get());
+		// 생성 프롬프트(assistant 표지)는 넣지 않는다 — 실제 요청이 되감지 않고 이어 처리하게 한다
+		assertThat(body.get("prompt").asString())
+				.isEqualTo("<|im_start|>system\n카드 프롬프트<|im_end|>\n<|im_start|>user\n");
+		assertThat(body.get("id_slot").asInt()).isZero();
+		assertThat(body.get("n_predict").asInt()).isZero();
+		assertThat(body.get("cache_prompt").asBoolean()).isTrue();
+	}
+
+	@Test
+	@DisplayName("예열 오류 응답·연결 거부는 InferenceServiceException")
+	void warmupFailures() throws IOException {
+		warmupStatus = 503;
+		assertThatThrownBy(() -> client.warmup(List.of(Message.system("시스템")), 1))
+				.isInstanceOf(InferenceServiceException.class);
+
+		HttpInferenceClient down = clientFor("http://127.0.0.1:" + unusedPort());
+		assertThatThrownBy(() -> down.warmup(List.of(Message.system("시스템")), 1))
+				.isInstanceOf(InferenceServiceException.class);
+	}
+
+	@Test
+	@DisplayName("공통 접두사는 서로게이트 쌍 한가운데서 자르지 않는다")
+	void commonPrefixKeepsSurrogatePairs() {
+		assertThat(HttpInferenceClient.commonPrefix("ab😀", "ab😃")).isEqualTo("ab");
+		assertThat(HttpInferenceClient.commonPrefix("가나다", "가나라")).isEqualTo("가나");
 	}
 
 	@Test

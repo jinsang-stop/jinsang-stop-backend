@@ -19,6 +19,16 @@ public interface InferenceClient {
 	 */
 	String complete(ChatRequest request);
 
+	/**
+	 * 프롬프트 캐시 예열 — {@code prefix} 뒤에 사용자 메시지 하나가 붙을 실제 요청의 앞부분을 슬롯에 미리 올린다.
+	 * 생성 프롬프트(assistant 시작 표지)까지 캐시하면 실제 요청이 그 앞까지 되감아야 하는데,
+	 * 이 모델은 되감기가 체크포인트에 달려 있어 프롬프트 전체를 다시 처리하는 경우가 있다.
+	 * 그래서 실제 요청의 정확한 접두사만 올려, 실제 요청은 그 뒤만 처리하게 한다.
+	 *
+	 * @throws InferenceServiceException 연결 실패·시간 초과·오류 응답
+	 */
+	void warmup(List<Message> prefix, int slot);
+
 	/** 대화 메시지 한 건 */
 	record Message(String role, String content) {
 

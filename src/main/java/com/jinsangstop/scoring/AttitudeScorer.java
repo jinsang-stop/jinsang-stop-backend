@@ -65,11 +65,10 @@ public class AttitudeScorer {
 		}
 	}
 
-	/** 기동 시 루브릭을 슬롯 1에 미리 올린다. 실패해도 무시한다 */
+	/** 기동 시 채점 프롬프트의 앞부분(루브릭 + 사용자 메시지 표지 직전)을 슬롯 1에 미리 올린다. 실패해도 무시한다 */
 	public void warmup() {
 		try {
-			inferenceClient.complete(new ChatRequest(promptAssembler.warmup(), SCORING_SLOT, SCORING_TEMPERATURE,
-					seed, 1, null, null));
+			inferenceClient.warmup(promptAssembler.warmup(), SCORING_SLOT);
 			log.info("채점 루브릭 캐시 예열 완료");
 		} catch (RuntimeException e) {
 			log.warn("채점 루브릭 캐시 예열 실패(무시): {}", e.getMessage());
